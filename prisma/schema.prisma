@@ -1,0 +1,76 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  password     String     // Contraseña hasheada
+  name         String?
+  avatarUrl    String?
+  role         String     @default("user") // "user", "admin"
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  reviews      Review[]
+  favorites    Favorite[]
+}
+
+model Movie {
+  id           String     @id @default(uuid())
+  title        String
+  description  String?
+  director     String?
+  releaseYear  Int?
+  durationMin  Int?       // Duración en minutos
+  posterUrl    String?    // URL de la imagen del póster
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  genres       Genre[]    @relation("MovieGenres") // Relación muchos a muchos con Géneros
+  reviews      Review[]
+  favorites    Favorite[]
+}
+
+model Genre {
+  id           String     @id @default(uuid())
+  name         String     @unique
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  movies       Movie[]    @relation("MovieGenres") // Relación muchos a muchos con Películas
+}
+
+model Review {
+  id           String     @id @default(uuid())
+  rating       Int       
+  comment      String?
+  userId       String
+  movieId      String
+  user         User       @relation(fields: [userId], references: [id])
+  movie        Movie      @relation(fields: [movieId], references: [id])
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([userId, movieId]) // Un usuario solo puede dejar una reseña por película
+}
+
+model Favorite {
+  id           String     @id @default(uuid())
+  userId       String
+  movieId      String
+  user         User       @relation(fields: [userId], references: [id])
+  movie        Movie      @relation(fields: [movieId], references: [id])
+  createdAt    DateTime   @default(now())
+
+  @@unique([userId, movieId]) // Un usuario solo puede marcar una película como favorita una vez
+}
