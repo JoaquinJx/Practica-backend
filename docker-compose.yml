@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # Servicio de la base de datos PostgreSQL
+  db:
+    image: postgres:14 # Puedes usar una versión específica de PostgreSQL
+    restart: always
+    environment:
+      POSTGRES_USER: ${DATABASE_USER} # Se lee del .env
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD} # Se lee del .env
+      POSTGRES_DB: ${DATABASE_NAME} # Se lee del .env
+    ports:
+      - "5432:5432" # Mapea el puerto de la base de datos para accederla desde tu máquina local (opcional)
+    volumes:
+      - db_data1:/var/lib/postgresql/data # Persistencia de datos de la base de datos
+    networks:
+      - app-network
+
+  # Servicio de tu aplicación NestJS
+  app:
+    build:
+      context: . # El contexto es la raíz de tu proyecto donde está el Dockerfile
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "${APP_PORT}:${APP_PORT}" # Mapea el puerto de tu aplicación para accederla desde tu máquina local
+    environment:
+      DATABASE_URL: ${DATABASE_URL} # Se lee del .env
+      NODE_ENV: ${NODE_ENV} # Se lee del .env
+      APP_PORT: ${APP_PORT} # Se lee del .env
+      JWT_SECRET: ${JWT_SECRET} # Se lee del .env
+      # Agrega aquí cualquier otra variable de entorno necesaria para tu aplicación
+    depends_on:
+      - db # Asegura que la base de datos se inicie antes que la aplicación
+    networks:
+      - app-network
+    #Add adminer service 
+  adminer:
+    image: adminer:latest # Imagen de Adminer para gestionar la base de datos
+    restart: always
+    ports:
+      - "8080:8080" # Mapea el puerto de Adminer para accederlo desde tu máquina local
+    environment:
+      ADMINER_DEFAULT_SERVER: db # Nombre del servicio de la base de datos  
+    networks:
+      - app-network    
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  db_data: 
+  db_data1:
+  # Define el volumen para la persistencia de datos de la base de datos

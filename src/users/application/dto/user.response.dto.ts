@@ -31,8 +31,8 @@ export class UserResponseDto{
     this.name=user.name ||null ;
     this.avatarUrl=user.avatarUrl || null;
     this.role=user.role;
-    this.createdAt=user.createAt;
-    this.updatedAt=user.updateAt;
+    this.createdAt=user.createdAt;
+    this.updatedAt=user.updatedAt;
 
   }
 }
