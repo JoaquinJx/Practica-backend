@@ -28,4 +28,3 @@ export class CreateUserDto {
   @IsOptional()
   role?: string;
 }
-//Ejemplo para creacion de rama
