@@ -1,20 +1,25 @@
-import { Module } from "@nestjs/common";
+import { Module, forwardRef } from "@nestjs/common";
 import { PrismaModule } from "src/shared/services/prisma.module";
-import { PrismaService } from "src/shared/services/prisma.service";
 import { UserService } from "./application/services/user.service";
 import { UserController } from "./infrastructure/controllers/user.controller";
-
+import { AdminController } from "./infrastructure/controllers/admin.controller";
+import { PublicController } from "./infrastructure/controllers/public.controller";
+import { PrismaUserRepository } from "./infrastructure/repositories/prisma-user.repository";
+import { AuthModule } from "src/auth/auth.module";
 
 @Module({
-    imports:[PrismaModule],
-    controllers:[UserController],
-    providers:[
+    imports: [
+        PrismaModule,
+        forwardRef(() => AuthModule)
+    ],
+    controllers: [UserController, AdminController, PublicController],
+    providers: [
         {
             provide: 'IUserRepository',
-            useClass: PrismaService // PrismaService acts as the repository for User
+            useClass: PrismaUserRepository // Using the correct repository implementation
         },
         UserService
     ],
-    exports:[UserService]
+    exports: [UserService]
 })
-export class UserModule{}
+export class UserModule {}

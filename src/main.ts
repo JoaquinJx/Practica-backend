@@ -2,10 +2,12 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { AuthGuard } from './auth/guards/auth.guard';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  //VALIDACIONES
+  
+  // VALIDACIONES
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -13,7 +15,12 @@ async function bootstrap() {
       transform: true,
     }),
   );
-  //CONFIGURACION DE SWAGGER
+
+  // GUARD GLOBAL - Todos los endpoints requieren autenticación
+  // NOTA: Solo descomenta esto si quieres que TODOS los endpoints requieran autenticación
+  // app.useGlobalGuards(new AuthGuard());
+
+  // CONFIGURACION DE SWAGGER
   const config = new DocumentBuilder()
     .setTitle('Api de peliculas')
     .setDescription('Practicar typescript y nestjs con api de peliculas')

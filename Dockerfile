@@ -43,7 +43,7 @@ COPY prisma ./prisma
 
 # Expone el puerto en el que se ejecutará tu aplicación NestJS
 # Asegúrate de que coincida con el APP_PORT en tu .env y el puerto mapeado en docker-compose.yml
-EXPOSE 3000
+EXPOSE 3001
 
 # Comando para ejecutar la aplicación
 # Es buena práctica ejecutar las migraciones antes de iniciar la aplicación.
