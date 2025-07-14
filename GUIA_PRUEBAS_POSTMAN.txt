@@ -1,0 +1,430 @@
+# 🚀 **Guía de Pruebas con Postman - Pipes NestJS**
+
+Esta guía te ayuda a probar todos los pipes y funcionalidades de tu API usando Postman.
+
+## **📋 1. CONFIGURACIÓN INICIAL DE POSTMAN**
+
+### **Crear Colección:**
+1. Abrir Postman
+2. Crear nueva colección: "NestJS Pipes Testing"
+3. Agregar variable de colección:
+   - **baseUrl**: `http://localhost:3001`
+
+### **Variables de Entorno:**
+Crear un environment con estas variables:
+- **baseUrl**: `http://localhost:3001`
+- **token**: `{{token}}` (se actualizará automáticamente)
+- **userId**: `{{userId}}` (se actualizará automáticamente)
+
+## **🧪 2. PRUEBAS PASO A PASO**
+
+### **Test 1: Health Check (Endpoint Público)**
+```
+GET {{baseUrl}}/public/health
+```
+**Headers:** Ninguno
+**Body:** Ninguno
+**Resultado esperado:**
+```json
+{
+  "status": "ok",
+  "timestamp": "2025-07-14T10:30:00.000Z",
+  "uptime": 123.456
+}
+```
+
+---
+
+### **Test 2: Crear Usuario (ValidationPipe + Transformación)**
+```
+POST {{baseUrl}}/users
+```
+**Headers:**
+```
+Content-Type: application/json
+```
+**Body (JSON):**
+```json
+{
+  "email": " ADMIN@TEST.COM ",
+  "password": "SecurePass123",
+  "name": " john  doe ",
+  "role": " admin "
+}
+```
+**Resultado esperado:**
+- Email normalizado: `"admin@test.com"`
+- Nombre capitalizado: `"John Doe"`
+- Rol normalizado: `"admin"`
+
+**Script Post-request (guardar userId):**
+```javascript
+pm.test("Status code is 201", function () {
+    pm.response.to.have.status(201);
+});
+
+pm.test("User created with normalized data", function () {
+    var jsonData = pm.response.json();
+    pm.expect(jsonData.email).to.eql("admin@test.com");
+    pm.expect(jsonData.name).to.eql("John Doe");
+    pm.expect(jsonData.role).to.eql("admin");
+    
+    // Guardar userId para tests posteriores
+    pm.collectionVariables.set("userId", jsonData.id);
+});
+```
+
+---
+
+### **Test 3: Login (Obtener JWT Token)**
+```
+POST {{baseUrl}}/auth/login
+```
+**Headers:**
+```
+Content-Type: application/json
+```
+**Body (JSON):**
+```json
+{
+  "email": "admin@test.com",
+  "password": "SecurePass123"
+}
+```
+**Resultado esperado:**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "user": {
+    "id": "...",
+    "email": "admin@test.com",
+    "name": "John Doe",
+    "role": "admin"
+  }
+}
+```
+
+**Script Post-request (guardar token):**
+```javascript
+pm.test("Status code is 201", function () {
+    pm.response.to.have.status(201);
+});
+
+pm.test("Token received", function () {
+    var jsonData = pm.response.json();
+    pm.expect(jsonData.access_token).to.exist;
+    
+    // Guardar token para requests autenticados
+    pm.collectionVariables.set("token", jsonData.access_token);
+});
+```
+
+---
+
+### **Test 4: Obtener Perfil (Endpoint Protegido)**
+```
+GET {{baseUrl}}/users/profile
+```
+**Headers:**
+```
+Authorization: Bearer {{token}}
+```
+**Body:** Ninguno
+**Resultado esperado:** Datos del usuario autenticado
+
+---
+
+### **Test 5: Buscar por Email (EmailNormalizationPipe)**
+```
+GET {{baseUrl}}/users/search/email/ ADMIN@TEST.COM 
+```
+**Headers:**
+```
+Authorization: Bearer {{token}}
+```
+**Body:** Ninguno
+**Resultado esperado:** Usuario encontrado (email normalizado automáticamente)
+
+**Script Post-request:**
+```javascript
+pm.test("Status code is 200", function () {
+    pm.response.to.have.status(200);
+});
+
+pm.test("Email was normalized", function () {
+    var jsonData = pm.response.json();
+    pm.expect(jsonData.email).to.eql("admin@test.com");
+});
+```
+
+---
+
+### **Test 6: Listar Usuarios con Filtros (Query Pipes)**
+```
+GET {{baseUrl}}/users?page=1&limit=5&role=admin
+```
+**Headers:**
+```
+Authorization: Bearer {{token}}
+```
+**Body:** Ninguno
+**Resultado esperado:** Lista paginada con filtros aplicados
+
+**Script Post-request:**
+```javascript
+pm.test("Status code is 200", function () {
+    pm.response.to.have.status(200);
+});
+
+pm.test("Pagination and filters applied", function () {
+    var jsonData = pm.response.json();
+    pm.expect(jsonData.filters.page).to.eql(1);
+    pm.expect(jsonData.filters.limit).to.eql(5);
+    pm.expect(jsonData.filters.role).to.eql("admin");
+});
+```
+
+---
+
+### **Test 7: Obtener Usuario por ID (ParseUUIDPipe)**
+```
+GET {{baseUrl}}/users/{{userId}}
+```
+**Headers:**
+```
+Authorization: Bearer {{token}}
+```
+**Body:** Ninguno
+**Resultado esperado:** Datos del usuario específico
+
+---
+
+### **Test 8: Cambiar Rol (RoleValidationPipe)**
+```
+PATCH {{baseUrl}}/users/{{userId}}/role
+```
+**Headers:**
+```
+Authorization: Bearer {{token}}
+Content-Type: application/json
+```
+**Body (JSON):**
+```json
+{
+  "role": " MODERATOR "
+}
+```
+**Resultado esperado:** Rol actualizado y normalizado
+
+**Script Post-request:**
+```javascript
+pm.test("Status code is 200", function () {
+    pm.response.to.have.status(200);
+});
+
+pm.test("Role was normalized", function () {
+    var jsonData = pm.response.json();
+    pm.expect(jsonData.role).to.eql("moderator");
+});
+```
+
+---
+
+### **Test 9: Actualizar Perfil (ValidationPipe con campos opcionales)**
+```
+PUT {{baseUrl}}/users/profile
+```
+**Headers:**
+```
+Authorization: Bearer {{token}}
+Content-Type: application/json
+```
+**Body (JSON):**
+```json
+{
+  "name": " jane  smith ",
+  "avatarUrl": "https://example.com/avatar.jpg"
+}
+```
+**Resultado esperado:** Perfil actualizado con transformaciones aplicadas
+
+---
+
+## **🚨 3. PRUEBAS DE VALIDACIÓN Y ERRORES**
+
+### **Test Error 1: Email Inválido**
+```
+POST {{baseUrl}}/users
+```
+**Body (JSON):**
+```json
+{
+  "email": "invalid-email",
+  "password": "SecurePass123",
+  "name": "John Doe",
+  "role": "user"
+}
+```
+**Resultado esperado:** Error 400 con mensaje específico
+
+**Script Post-request:**
+```javascript
+pm.test("Status code is 400", function () {
+    pm.response.to.have.status(400);
+});
+
+pm.test("Email validation error", function () {
+    var jsonData = pm.response.json();
+    pm.expect(jsonData.message).to.include("email");
+});
+```
+
+---
+
+### **Test Error 2: Password Débil**
+```
+POST {{baseUrl}}/users
+```
+**Body (JSON):**
+```json
+{
+  "email": "test@test.com",
+  "password": "123",
+  "name": "John Doe",
+  "role": "user"
+}
+```
+**Resultado esperado:** Error 400 por password muy corto
+
+---
+
+### **Test Error 3: Rol Inválido**
+```
+PATCH {{baseUrl}}/users/{{userId}}/role
+```
+**Headers:**
+```
+Authorization: Bearer {{token}}
+Content-Type: application/json
+```
+**Body (JSON):**
+```json
+{
+  "role": "invalid_role"
+}
+```
+**Resultado esperado:** Error 400 por rol no válido
+
+---
+
+### **Test Error 4: UUID Inválido**
+```
+GET {{baseUrl}}/users/invalid-uuid
+```
+**Headers:**
+```
+Authorization: Bearer {{token}}
+```
+**Resultado esperado:** Error 400 por formato UUID inválido
+
+---
+
+### **Test Error 5: Sin Autorización**
+```
+GET {{baseUrl}}/users/{{userId}}
+```
+**Headers:** Ninguno (sin token)
+**Resultado esperado:** Error 401 Unauthorized
+
+---
+
+### **Test Error 6: Permisos Insuficientes**
+Primero crear un usuario normal:
+```
+POST {{baseUrl}}/users
+```
+**Body (JSON):**
+```json
+{
+  "email": "user@test.com",
+  "password": "UserPass123",
+  "name": "Regular User",
+  "role": "user"
+}
+```
+
+Luego hacer login y tratar de acceder a endpoint de admin:
+```
+GET {{baseUrl}}/users/admin-only
+```
+**Resultado esperado:** Error 403 Forbidden
+
+---
+
+## **📊 4. VERIFICAR TRANSFORMACIONES**
+
+### **Casos de Transformación a Probar:**
+
+#### **Email Normalization:**
+- `" ADMIN@TEST.COM "` → `"admin@test.com"`
+- `"User@Example.COM"` → `"user@example.com"`
+
+#### **Name Capitalization:**
+- `" john  doe "` → `"John Doe"`
+- `"mary jane watson"` → `"Mary Jane Watson"`
+
+#### **Role Normalization:**
+- `" ADMIN "` → `"admin"`
+- `"MODERATOR"` → `"moderator"`
+- `"User"` → `"user"`
+
+#### **Query Parameters:**
+- Sin `page` → Valor por defecto: `1`
+- Sin `limit` → Valor por defecto: `10`
+- `role=ADMIN` → `role=admin`
+
+---
+
+## **🔍 5. VERIFICAR EN BASE DE DATOS**
+
+Después de crear usuarios, ve a Adminer:
+1. **URL:** `http://localhost:8080`
+2. **Login:**
+   - Server: `postgres`
+   - Username: `postgres`
+   - Password: `postgres`
+   - Database: `practica_backend`
+3. **Verificar tabla User:** Los datos deben estar normalizados
+
+---
+
+## **📝 6. LOGS A OBSERVAR**
+
+En la consola de Docker verás:
+```
+[AUTH ACCESS] POST /users - 192.168.1.100
+[PIPE TRANSFORMATION] Email: admin@test.com
+[PIPE TRANSFORMATION] Name: John Doe
+[AUTH SUCCESS] POST /users - 156ms
+```
+
+---
+
+## **⚡ 7. COLECCIÓN POSTMAN COMPLETA**
+
+### **Orden de Ejecución Recomendado:**
+1. Health Check
+2. Crear Admin User
+3. Login Admin
+4. Crear Regular User
+5. Probar endpoints protegidos
+6. Probar transformaciones
+7. Probar validaciones de error
+8. Verificar permisos
+
+### **Variables Automáticas:**
+- `{{token}}` se actualiza automáticamente después del login
+- `{{userId}}` se actualiza después de crear usuario
+- `{{baseUrl}}` configurado como variable de colección
+
+¡Esta guía te permitirá probar exhaustivamente todos los pipes y validaciones de tu API! 🚀

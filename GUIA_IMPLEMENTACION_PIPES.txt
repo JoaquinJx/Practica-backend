@@ -1,0 +1,679 @@
+# 🔧 **Guía Completa: Implementación de Pipes en NestJS - Paso a Paso**
+
+Esta guía te explica cómo implementar pipes en tu proyecto NestJS, específicamente para el módulo de usuarios que ya tienes construido.
+
+## **🏗️ 1. CONCEPTOS FUNDAMENTALES**
+
+### **¿Qué son los Pipes?**
+Los Pipes son clases que implementan la interfaz `PipeTransform` y se ejecutan **antes** de que los datos lleguen al método del controlador. Tienen dos propósitos principales:
+
+1. **Transformación**: Convertir datos de entrada al formato deseado
+2. **Validación**: Verificar que los datos cumplan con ciertos criterios
+
+### **Orden de Ejecución en NestJS:**
+```
+1. Guards (AuthGuard, RoleGuard)
+2. Interceptors (antes)
+3. 🔧 PIPES (transforman/validan)
+4. Controller método
+5. Interceptors (después)
+6. Filters (si hay errores)
+```
+
+## **📋 2. TIPOS DE PIPES DISPONIBLES**
+
+### **A. Built-in Pipes (Incluidos en NestJS):**
+- **ValidationPipe**: Valida DTOs usando decoradores de class-validator
+- **ParseIntPipe**: Convierte strings a números enteros
+- **ParseFloatPipe**: Convierte strings a números decimales
+- **ParseBoolPipe**: Convierte strings a boolean
+- **ParseArrayPipe**: Convierte strings a arrays
+- **ParseUUIDPipe**: Valida formato UUID
+- **ParseEnumPipe**: Valida valores de enum
+- **DefaultValuePipe**: Asigna valores por defecto
+
+### **B. Custom Pipes (Personalizados):**
+Pipes que creas específicamente para tu aplicación.
+
+## **🎯 3. IMPLEMENTACIÓN PASO A PASO EN TU PROYECTO**
+
+### **Paso 1: Estructura de Archivos para Pipes**
+
+Crear la siguiente estructura en tu proyecto:
+```
+src/users/
+├── application/
+│   ├── dto/
+│   │   ├── create.user.dto.ts     ✅ Ya tienes
+│   │   └── update.user.dto.ts     ✅ Ya tienes
+│   └── pipes/                     🆕 Crear esta carpeta
+│       ├── email-normalization.pipe.ts
+│       ├── password-strength.pipe.ts
+│       ├── role-validation.pipe.ts
+│       ├── user-exists.pipe.ts
+│       └── index.ts               🆕 Barrel exports
+```
+
+### **Paso 2: Configurar ValidationPipe Global**
+
+En tu archivo `main.ts` o `app.module.ts`, agrega:
+
+```typescript
+// En main.ts
+app.useGlobalPipes(new ValidationPipe({
+  transform: true,          // Transforma automáticamente a tipos
+  whitelist: true,         // Solo permite propiedades definidas en DTO
+  forbidNonWhitelisted: true, // Rechaza propiedades extra
+  transformOptions: {
+    enableImplicitConversion: true, // Conversión automática de tipos
+  },
+  disableErrorMessages: false,      // Mantiene mensajes de error
+}));
+```
+
+### **Paso 3: Optimizar tus DTOs Existentes**
+
+Tu `CreateUserDto` ya está bien configurado, pero aquí tienes algunas mejoras:
+
+```typescript
+// create.user.dto.ts - Optimizado
+import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { IsEmail, IsIn, IsNotEmpty, IsOptional, IsString, IsUrl, MinLength, Matches } from 'class-validator';
+
+export class CreateUserDto {
+  @ApiProperty({ 
+    description: 'The unique email address for the user',
+    example: 'user@example.com'
+  })
+  @IsEmail({}, { message: 'Email must be a valid email address.' })
+  @IsNotEmpty({ message: 'Email cannot be empty.' })
+  @Transform(({ value }) => value?.toLowerCase().trim())
+  email: string;
+
+  @ApiProperty({ 
+    description: 'The user password (min 6 characters)',
+    example: 'SecurePass123'
+  })
+  @IsString({ message: 'Password must be a string.' })
+  @MinLength(6, { message: 'Password must have at least 6 characters.' })
+  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, {
+    message: 'Password must contain at least one uppercase letter, one lowercase letter, and one number.'
+  })
+  @IsNotEmpty({ message: 'Password cannot be empty.' })
+  @Transform(({ value }) => value?.trim())
+  password: string;
+
+  @ApiProperty({ 
+    description: 'The full name of the user',
+    example: 'John Doe'
+  })
+  @IsString({ message: 'Name must be a string.' })
+  @IsNotEmpty({ message: 'Name cannot be empty.' })
+  @Transform(({ value }) => value?.trim().replace(/\s+/g, ' ')) // Normaliza espacios
+  name: string;
+
+  @ApiProperty({ 
+    description: 'URL to the user avatar image',
+    required: false,
+    example: 'https://example.com/avatar.jpg'
+  })
+  @IsOptional()
+  @IsUrl({}, { message: 'Avatar URL must be a valid URL.' })
+  @Transform(({ value }) => value?.trim())
+  avatarUrl?: string;
+
+  @ApiProperty({ 
+    description: 'User role in the system',
+    enum: ['user', 'admin', 'moderator'],
+    default: 'user',
+    example: 'user'
+  })
+  @IsOptional()
+  @IsIn(['user', 'admin', 'moderator'], {
+    message: 'Role must be one of: user, admin, moderator.'
+  })
+  @Transform(({ value }) => value || 'user')
+  role?: string;
+}
+```
+
+### **Paso 4: Crear Pipes Personalizados**
+
+#### **A. EmailNormalizationPipe**
+```typescript
+// application/pipes/email-normalization.pipe.ts
+import { PipeTransform, Injectable, BadRequestException } from '@nestjs/common';
+
+@Injectable()
+export class EmailNormalizationPipe implements PipeTransform {
+  transform(value: any) {
+    if (!value || typeof value !== 'string') {
+      throw new BadRequestException('Email must be a valid string');
+    }
+
+    // Normalizar email
+    const normalizedEmail = value
+      .toLowerCase()           // Convertir a minúsculas
+      .trim()                 // Eliminar espacios
+      .replace(/\s+/g, '');   // Eliminar espacios internos
+
+    // Validación básica de formato
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(normalizedEmail)) {
+      throw new BadRequestException('Email format is invalid');
+    }
+
+    return normalizedEmail;
+  }
+}
+```
+
+#### **B. PasswordStrengthPipe**
+```typescript
+// application/pipes/password-strength.pipe.ts
+import { PipeTransform, Injectable, BadRequestException } from '@nestjs/common';
+
+@Injectable()
+export class PasswordStrengthPipe implements PipeTransform {
+  transform(value: any) {
+    if (!value || typeof value !== 'string') {
+      throw new BadRequestException('Password must be a valid string');
+    }
+
+    const password = value.trim();
+
+    // Verificar longitud mínima
+    if (password.length < 6) {
+      throw new BadRequestException('Password must be at least 6 characters long');
+    }
+
+    // Verificar complejidad
+    const hasUpperCase = /[A-Z]/.test(password);
+    const hasLowerCase = /[a-z]/.test(password);
+    const hasNumbers = /\d/.test(password);
+
+    if (!hasUpperCase || !hasLowerCase || !hasNumbers) {
+      throw new BadRequestException(
+        'Password must contain at least one uppercase letter, one lowercase letter, and one number'
+      );
+    }
+
+    return password;
+  }
+}
+```
+
+#### **C. RoleValidationPipe**
+```typescript
+// application/pipes/role-validation.pipe.ts
+import { PipeTransform, Injectable, BadRequestException } from '@nestjs/common';
+import { Role } from 'src/auth/enums/role.enum';
+
+@Injectable()
+export class RoleValidationPipe implements PipeTransform {
+  private readonly allowedRoles = Object.values(Role);
+
+  transform(value: any) {
+    if (!value) {
+      return 'user'; // Valor por defecto
+    }
+
+    if (typeof value !== 'string') {
+      throw new BadRequestException('Role must be a string');
+    }
+
+    const normalizedRole = value.toLowerCase().trim();
+
+    if (!this.allowedRoles.includes(normalizedRole as Role)) {
+      throw new BadRequestException(
+        `Role must be one of: ${this.allowedRoles.join(', ')}`
+      );
+    }
+
+    return normalizedRole;
+  }
+}
+```
+
+#### **D. UserExistsPipe**
+```typescript
+// application/pipes/user-exists.pipe.ts
+import { PipeTransform, Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { UserService } from '../services/user.service';
+
+@Injectable()
+export class UserExistsPipe implements PipeTransform {
+  constructor(private readonly userService: UserService) {}
+
+  async transform(value: any) {
+    if (!value || typeof value !== 'string') {
+      throw new BadRequestException('User ID must be a valid string');
+    }
+
+    // Validar formato UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(value)) {
+      throw new BadRequestException('User ID must be a valid UUID');
+    }
+
+    try {
+      // Verificar que el usuario existe
+      await this.userService.findById(value);
+      return value;
+    } catch (error) {
+      throw new NotFoundException(`User with ID "${value}" not found`);
+    }
+  }
+}
+```
+
+### **Paso 5: Crear Barrel Exports**
+```typescript
+// application/pipes/index.ts
+export { EmailNormalizationPipe } from './email-normalization.pipe';
+export { PasswordStrengthPipe } from './password-strength.pipe';
+export { RoleValidationPipe } from './role-validation.pipe';
+export { UserExistsPipe } from './user-exists.pipe';
+```
+
+### **Paso 6: Aplicar Pipes en el Controlador**
+
+Aquí tienes diferentes formas de aplicar pipes en tu `UserController`:
+
+```typescript
+// user.controller.ts - Versión mejorada
+import { 
+  Body, Controller, Post, Get, Request, Put, Delete, Param, 
+  UsePipes, ValidationPipe, ParseUUIDPipe, Query, DefaultValuePipe, ParseIntPipe 
+} from "@nestjs/common";
+import { CreateUserDto } from "src/users/application/dto/create.user.dto";
+import { UpdateUserDto } from "src/users/application/dto/update.user.dto";
+import { UserService } from "src/users/application/services/user.service";
+import { Roles } from "src/auth/decorators/roles.decorator";
+import { Public } from "src/auth/decorators/public.decorator";
+import { Role } from "src/auth/enums/role.enum";
+import { 
+  EmailNormalizationPipe, 
+  PasswordStrengthPipe, 
+  RoleValidationPipe,
+  UserExistsPipe 
+} from "../application/pipes";
+
+@Controller('users')
+@UsePipes(new ValidationPipe({ 
+  transform: true, 
+  whitelist: true,
+  forbidNonWhitelisted: true 
+})) // Pipe global para todo el controlador
+export class UserController {
+  constructor(private readonly userService: UserService) {}
+  
+  // 🔓 REGISTRO - Método público con validaciones específicas
+  @Public()
+  @Post()
+  create(@Body() createUserDto: CreateUserDto) {
+    return this.userService.createUser(createUserDto);
+  }
+
+  // 🔍 OBTENER PERFIL - Usuario autenticado
+  @Get('profile')
+  getProfile(@Request() req: any) {
+    return this.userService.findByEmail(req.user.username);
+  }
+
+  // 📋 LISTAR USUARIOS - Con paginación
+  @Roles(Role.ADMIN)
+  @Get()
+  findUsers(
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+    @Query('role', RoleValidationPipe) role?: string
+  ) {
+    return this.userService.findAll();
+  }
+
+  // 👤 OBTENER USUARIO ESPECÍFICO - Con validación UUID
+  @Roles(Role.ADMIN, Role.MODERATOR)
+  @Get(':id')
+  findUser(@Param('id', ParseUUIDPipe) id: string) {
+    return this.userService.findById(id);
+  }
+
+  // ✏️ ACTUALIZAR PERFIL PROPIO
+  @Put('profile')
+  updateProfile(
+    @Request() req: any, 
+    @Body() updateUserDto: UpdateUserDto
+  ) {
+    return this.userService.updateUser(req.user.userId, updateUserDto);
+  }
+
+  // ✏️ ACTUALIZAR USUARIO ESPECÍFICO - Solo Admin
+  @Roles(Role.ADMIN)
+  @Put(':id')
+  updateUser(
+    @Param('id', ParseUUIDPipe, UserExistsPipe) id: string,
+    @Body() updateUserDto: UpdateUserDto
+  ) {
+    return this.userService.updateUser(id, updateUserDto);
+  }
+
+  // 🗑️ ELIMINAR USUARIO - Solo Admin con validación de existencia
+  @Roles(Role.ADMIN)
+  @Delete(':id')
+  deleteUser(
+    @Param('id', ParseUUIDPipe, UserExistsPipe) id: string,
+    @Request() req: any
+  ) {
+    return this.userService.deleteUser(id);
+  }
+
+  // 👑 ENDPOINT SOLO ADMIN
+  @Roles(Role.ADMIN)
+  @Get('admin-only')
+  getAdminData(@Request() req: any) {
+    return {
+      message: 'Este endpoint solo es accesible para administradores',
+      user: req.user
+    };
+  }
+
+  // 👑🛡️ ENDPOINT ADMIN/MODERADOR
+  @Roles(Role.ADMIN, Role.MODERATOR)
+  @Get('moderator-admin')
+  getModeratorOrAdminData(@Request() req: any) {
+    return {
+      message: 'Este endpoint es accesible para moderadores y administradores',
+      user: req.user
+    };
+  }
+}
+```
+
+## **🔄 4. FLUJO COMPLETO CON PIPES**
+
+### **Ejemplo: Crear Usuario con Pipes**
+```
+1. 📥 POST /users
+   Body: { "email": " USER@TEST.COM ", "password": "weakpass", "name": "  Test  User  ", "role": "admin" }
+
+2. 🛡️ Guards se ejecutan:
+   ├── AuthGuard: ¿@Public()? → SÍ ✅
+   └── RoleGuard: ¿@Public()? → SÍ ✅
+
+3. 🔧 ValidationPipe se ejecuta automáticamente:
+   ├── @Transform en email: " USER@TEST.COM " → "user@test.com"
+   ├── @IsEmail valida formato ✅
+   ├── @Matches valida complejidad de password ❌ → BadRequestException
+   └── Error: "Password must contain at least one uppercase letter..."
+
+4. 🚨 AuthExceptionFilter captura el error:
+   └── Respuesta estructurada con código 400
+
+// Si el password fuera válido, continuaría:
+5. ✅ Datos transformados y validados:
+   { "email": "user@test.com", "password": "SecurePass123", "name": "Test User", "role": "user" }
+
+6. 🎯 Controller recibe datos limpios y validados
+7. ⚙️ Service procesa con confianza
+```
+
+## **⚡ 5. MEJORES PRÁCTICAS**
+
+### **A. Orden de Pipes en Parámetros:**
+```typescript
+@Param('id', ParseUUIDPipe, UserExistsPipe) id: string
+// 1. ParseUUIDPipe valida formato
+// 2. UserExistsPipe verifica existencia
+```
+
+### **B. Configuración de ValidationPipe:**
+```typescript
+// Para diferentes casos de uso
+new ValidationPipe({
+  transform: true,              // Convierte tipos automáticamente
+  whitelist: true,             // Solo propiedades del DTO
+  forbidNonWhitelisted: true,  // Rechaza propiedades extra
+  skipMissingProperties: false, // No saltear validaciones
+  skipNullProperties: false,   // No saltear null values
+  skipUndefinedProperties: false, // No saltear undefined values
+  transformOptions: {
+    enableImplicitConversion: true // String → Number automático
+  }
+})
+```
+
+### **C. Manejo de Errores en Pipes:**
+```typescript
+// Siempre usar excepciones específicas
+throw new BadRequestException('Mensaje específico');
+throw new NotFoundException('Recurso no encontrado');
+throw new UnprocessableEntityException('Datos no procesables');
+```
+
+### **D. Pipes Async para Validaciones de BD:**
+```typescript
+// Para pipes que necesitan consultar la base de datos
+@Injectable()
+export class EmailAvailabilityPipe implements PipeTransform {
+  constructor(private userService: UserService) {}
+
+  async transform(value: string): Promise<string> {
+    try {
+      await this.userService.findByEmail(value);
+      throw new ConflictException('Email already exists');
+    } catch (NotFoundException) {
+      return value; // Email disponible
+    }
+  }
+}
+```
+
+## **🎯 6. CASOS DE USO ESPECÍFICOS**
+
+### **A. Validación de Archivos:**
+```typescript
+@Injectable()
+export class ImageValidationPipe implements PipeTransform {
+  transform(file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
+
+    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif'];
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      throw new BadRequestException('Only image files are allowed');
+    }
+
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    if (file.size > maxSize) {
+      throw new BadRequestException('File size must be less than 5MB');
+    }
+
+    return file;
+  }
+}
+```
+
+### **B. Sanitización de HTML:**
+```typescript
+@Injectable()
+export class HtmlSanitizationPipe implements PipeTransform {
+  transform(value: string) {
+    if (!value) return value;
+    
+    // Remover scripts y otros elementos peligrosos
+    return value
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+      .trim();
+  }
+}
+```
+
+## **📊 7. TESTING DE PIPES**
+
+### **Ejemplo de Test para Pipe Personalizado:**
+```typescript
+// email-normalization.pipe.spec.ts
+describe('EmailNormalizationPipe', () => {
+  let pipe: EmailNormalizationPipe;
+
+  beforeEach(() => {
+    pipe = new EmailNormalizationPipe();
+  });
+
+  it('should normalize email to lowercase', () => {
+    const result = pipe.transform('USER@EXAMPLE.COM');
+    expect(result).toBe('user@example.com');
+  });
+
+  it('should trim whitespace', () => {
+    const result = pipe.transform('  user@example.com  ');
+    expect(result).toBe('user@example.com');
+  });
+
+  it('should throw error for invalid email', () => {
+    expect(() => pipe.transform('invalid-email')).toThrow(BadRequestException);
+  });
+
+  it('should throw error for non-string input', () => {
+    expect(() => pipe.transform(123)).toThrow(BadRequestException);
+  });
+});
+```
+
+## **🚨 8. MANEJO DE ERRORES CON PIPES**
+
+### **Errores Comunes y Soluciones:**
+
+#### **A. ValidationPipe Errors:**
+```typescript
+// Error típico:
+{
+  "statusCode": 400,
+  "message": [
+    "Email must be a valid email address.",
+    "Password must have at least 6 characters."
+  ],
+  "error": "Bad Request"
+}
+```
+
+#### **B. Custom Pipe Errors:**
+```typescript
+// En tu AuthExceptionFilter, agrega:
+@Catch(BadRequestException)
+export class ValidationExceptionFilter implements ExceptionFilter {
+  catch(exception: BadRequestException, host: ArgumentsHost) {
+    const ctx = host.switchToHttp();
+    const response = ctx.getResponse();
+    
+    const errorResponse = {
+      statusCode: 400,
+      timestamp: new Date().toISOString(),
+      path: ctx.getRequest().url,
+      message: exception.message,
+      type: 'VALIDATION_ERROR'
+    };
+
+    response.status(400).json(errorResponse);
+  }
+}
+```
+
+## **🎯 9. INTEGRACIÓN CON TU ARQUITECTURA EXISTENTE**
+
+### **En el UserModule:**
+```typescript
+// users.module.ts
+import { 
+  EmailNormalizationPipe, 
+  PasswordStrengthPipe, 
+  RoleValidationPipe,
+  UserExistsPipe 
+} from './application/pipes';
+
+@Module({
+  // ...existing code...
+  providers: [
+    // ...existing providers...
+    EmailNormalizationPipe,
+    PasswordStrengthPipe,
+    RoleValidationPipe,
+    UserExistsPipe,
+  ],
+  exports: [
+    // ...existing exports...
+    EmailNormalizationPipe,
+    PasswordStrengthPipe,
+    RoleValidationPipe,
+    UserExistsPipe,
+  ]
+})
+export class UserModule {}
+```
+
+### **Logs en AuthLoggingInterceptor:**
+```typescript
+// Tu interceptor ya existente puede loggear datos transformados:
+console.log('[PIPE TRANSFORMATION]', {
+  originalData: originalBody,
+  transformedData: transformedBody,
+  appliedPipes: ['ValidationPipe', 'EmailNormalizationPipe']
+});
+```
+
+## **📈 10. MÉTRICAS Y MONITOREO**
+
+### **Métricas Útiles para Pipes:**
+- Errores de validación más comunes
+- Tiempo de ejecución de pipes async
+- Datos más frecuentemente transformados
+- Patrones de entrada inválidos
+
+### **Logging de Pipes:**
+```typescript
+@Injectable()
+export class LoggingPipe implements PipeTransform {
+  transform(value: any, metadata: ArgumentMetadata) {
+    console.log(`[PIPE] ${metadata.type}:${metadata.data}`, {
+      originalValue: value,
+      timestamp: new Date().toISOString()
+    });
+    
+    return value;
+  }
+}
+```
+
+---
+
+## **✅ CHECKLIST DE IMPLEMENTACIÓN**
+
+### **Configuración Básica:**
+- [ ] ValidationPipe global configurado
+- [ ] DTOs con decoradores de validación
+- [ ] Transforms para normalización
+
+### **Pipes Personalizados:**
+- [ ] EmailNormalizationPipe implementado
+- [ ] PasswordStrengthPipe implementado  
+- [ ] RoleValidationPipe implementado
+- [ ] UserExistsPipe implementado
+
+### **Controladores:**
+- [ ] Pipes aplicados en endpoints relevantes
+- [ ] ParseUUIDPipe en parámetros ID
+- [ ] DefaultValuePipe en query parameters
+
+### **Testing:**
+- [ ] Tests unitarios para pipes personalizados
+- [ ] Tests de integración para endpoints
+
+### **Error Handling:**
+- [ ] Excepciones específicas en pipes
+- [ ] Filter actualizado para manejar errores de pipes
+
+Esta implementación de pipes te dará una validación robusta, datos limpios y consistentes, y una experiencia de desarrollo mucho mejor en tu módulo de usuarios.
