@@ -1,0 +1,1153 @@
+# 🔐 **Guía Completa: Módulo de Autenticación NestJS - Paso a Paso**
+
+Te explico cómo funciona todo el módulo de autenticación que hemos construido, con JWT, guards avanzados, decoradores, filtros de errores y logging.
+
+## **🏗️ 1. ARQUITECTURA GENERAL**
+
+```
+src/auth/
+├── auth.module.ts                    # Módulo principal de autenticación
+├── index.ts                          # Barrel exports para importación limpia
+├── constants.ts                      # Constantes (JWT secret, roles, etc.)
+├── enums/
+│   └── role.enum.ts                  # Enum de roles (USER, ADMIN, MODERATOR)
+├── services/
+│   └── auth.service.ts               # Lógica de autenticación y JWT
+├── guards/
+│   ├── auth.guard.ts                 # Guard global de autenticación JWT
+│   └── role.guard.ts                 # Guard de autorización por roles
+├── decorators/
+│   ├── public.decorator.ts           # Decorator @Public() para endpoints públicos
+│   ├── roles.decorator.ts            # Decorator @Roles() para autorización
+│   └── custom-error.decorator.ts     # Decorator para mensajes de error personalizados
+├── filters/
+│   └── auth-exception.filter.ts      # Filtro global para errores de auth
+└── interceptors/
+    └── auth-logging.interceptor.ts   # Interceptor para logging de acceso
+```
+
+## **🔍 2. PRINCIPIOS ARQUITECTÓNICOS APLICADOS**
+
+### **A. Guard-Based Security Architecture**
+```
+┌─────────────────────────┐
+│      HTTP REQUEST       │ ← Request entrante
+└─────────┬───────────────┘
+          │
+┌─────────▼───────────────┐
+│     AUTH GUARD          │ ← Verificación JWT + @Public()
+│   (Global Security)     │
+└─────────┬───────────────┘
+          │
+┌─────────▼───────────────┐
+│     ROLE GUARD          │ ← Verificación de roles + @Roles()
+│   (Authorization)       │
+└─────────┬───────────────┘
+          │
+┌─────────▼───────────────┐
+│     CONTROLLER          │ ← Endpoint ejecutado
+│   (Business Logic)      │
+└─────────────────────────┘
+```
+
+### **B. Cross-Cutting Concerns (Aspectos Transversales)**
+- **Authentication**: JWT verification en cada request
+- **Authorization**: Role-based access control
+- **Error Handling**: Respuestas estructuradas y consistentes
+- **Logging**: Auditoría de accesos y fallos de seguridad
+- **Decorators**: Metadatos para configurar comportamiento
+
+## **📋 3. PASO A PASO: CONSTRUCCIÓN DEL MÓDULO**
+
+### **Paso 1: Definir Constantes y Enums**
+
+```typescript
+// constants.ts
+// Centraliza todas las constantes del módulo de auth
+
+export const jwtConstants = {
+  secret: process.env.JWT_SECRET || 'defaultSecretKey123', // ⚠️ En producción usar variable de entorno
+  expiresIn: '24h', // Token expira en 24 horas
+};
+
+// Mensajes de error consistentes
+export const AUTH_MESSAGES = {
+  INVALID_TOKEN: 'Token de autenticación inválido o expirado',
+  NO_TOKEN: 'Token de autenticación requerido',
+  INSUFFICIENT_PERMISSIONS: 'Permisos insuficientes para acceder a este recurso',
+  USER_NOT_FOUND: 'Usuario no encontrado en el sistema',
+  INVALID_CREDENTIALS: 'Credenciales inválidas',
+  UNAUTHORIZED_ACCESS: 'Acceso no autorizado',
+  FORBIDDEN_RESOURCE: 'Recurso prohibido para tu nivel de acceso',
+} as const;
+
+// Metadatos para decoradores
+export const IS_PUBLIC_KEY = 'isPublic';
+export const ROLES_KEY = 'roles';
+export const CUSTOM_ERROR_KEY = 'customError';
+```
+
+```typescript
+// enums/role.enum.ts
+// Define los roles disponibles en el sistema
+
+export enum Role {
+  USER = 'user',           // 👤 Usuario básico
+  MODERATOR = 'moderator', // 🛡️ Moderador con permisos especiales
+  ADMIN = 'admin',         // 👑 Administrador con todos los permisos
+}
+
+// Helper functions para trabajar con roles
+export class RoleUtils {
+  
+  // 🔍 Verificar si un rol tiene permisos de administrador
+  static isAdmin(role: string): boolean {
+    return role === Role.ADMIN;
+  }
+
+  // 🔍 Verificar si un rol puede moderar
+  static canModerate(role: string): boolean {
+    return role === Role.ADMIN || role === Role.MODERATOR;
+  }
+
+  // 🔍 Verificar si un rol es válido
+  static isValidRole(role: string): boolean {
+    return Object.values(Role).includes(role as Role);
+  }
+
+  // 📋 Obtener todos los roles disponibles
+  static getAllRoles(): Role[] {
+    return Object.values(Role);
+  }
+
+  // 📊 Obtener jerarquía de roles (mayor a menor privilegio)
+  static getRoleHierarchy(): Role[] {
+    return [Role.ADMIN, Role.MODERATOR, Role.USER];
+  }
+}
+```
+
+### **Paso 2: Crear el Servicio de Autenticación**
+
+```typescript
+// services/auth.service.ts
+// Maneja toda la lógica de autenticación con JWT
+
+@Injectable()
+export class AuthService {
+  constructor(
+    private readonly userService: UserService, // Para validar usuarios
+    private readonly jwtService: JwtService,   // Para crear/verificar tokens
+  ) {}
+
+  // 🔐 LOGIN: Autenticar usuario y generar JWT
+  async signIn(email: string, password: string): Promise<{ access_token: string; user: any }> {
+    try {
+      // 1. 🔍 Buscar usuario por email
+      const user = await this.userService.findByEmail(email);
+      
+      // 2. 🔒 Verificar contraseña (en producción usar bcrypt)
+      if (user.password !== password) {
+        throw new UnauthorizedException(AUTH_MESSAGES.INVALID_CREDENTIALS);
+      }
+
+      // 3. 🎫 Crear payload para JWT
+      const payload = { 
+        sub: user.id,        // Subject (ID del usuario)
+        username: user.email, // Username (email)
+        role: user.role      // Role para autorización
+      };
+
+      // 4. 🏭 Generar token JWT
+      const access_token = await this.jwtService.signAsync(payload, {
+        secret: jwtConstants.secret,
+        expiresIn: jwtConstants.expiresIn,
+      });
+
+      // 5. 📤 Retornar token y datos del usuario (sin password)
+      return {
+        access_token,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          avatarUrl: user.avatarUrl,
+        }
+      };
+
+    } catch (error) {
+      // 🚨 Manejo de errores específicos
+      if (error instanceof NotFoundException) {
+        throw new UnauthorizedException(AUTH_MESSAGES.INVALID_CREDENTIALS);
+      }
+      throw error;
+    }
+  }
+
+  // 🔍 VALIDATE USER: Validar usuario desde token JWT
+  async validateUser(payload: any): Promise<any> {
+    try {
+      // 1. 🔍 Buscar usuario por ID del payload
+      const user = await this.userService.findById(payload.sub);
+      
+      // 2. ✅ Retornar datos del usuario para el request
+      return {
+        userId: user.id,
+        username: user.email,
+        role: user.role,
+        name: user.name,
+      };
+    } catch (error) {
+      // 🚨 Si el usuario no existe, el token es inválido
+      throw new UnauthorizedException(AUTH_MESSAGES.USER_NOT_FOUND);
+    }
+  }
+
+  // 🔄 REFRESH TOKEN: Generar nuevo token (opcional)
+  async refreshToken(oldToken: string): Promise<{ access_token: string }> {
+    try {
+      // 1. 🔍 Verificar token actual
+      const payload = await this.jwtService.verifyAsync(oldToken, {
+        secret: jwtConstants.secret,
+      });
+
+      // 2. 🎫 Crear nuevo payload
+      const newPayload = { 
+        sub: payload.sub,
+        username: payload.username,
+        role: payload.role
+      };
+
+      // 3. 🏭 Generar nuevo token
+      const access_token = await this.jwtService.signAsync(newPayload, {
+        secret: jwtConstants.secret,
+        expiresIn: jwtConstants.expiresIn,
+      });
+
+      return { access_token };
+    } catch (error) {
+      throw new UnauthorizedException(AUTH_MESSAGES.INVALID_TOKEN);
+    }
+  }
+
+  // 🧪 VERIFY TOKEN: Verificar si un token es válido
+  async verifyToken(token: string): Promise<any> {
+    try {
+      return await this.jwtService.verifyAsync(token, {
+        secret: jwtConstants.secret,
+      });
+    } catch (error) {
+      throw new UnauthorizedException(AUTH_MESSAGES.INVALID_TOKEN);
+    }
+  }
+}
+```
+
+### **Paso 3: Crear Decoradores Personalizados**
+
+```typescript
+// decorators/public.decorator.ts
+// Marca endpoints que no requieren autenticación
+
+import { SetMetadata } from '@nestjs/common';
+import { IS_PUBLIC_KEY } from '../constants';
+
+// 🔓 Decorator @Public() - Permite acceso sin autenticación
+export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
+
+// ✨ Uso:
+// @Public()
+// @Get('info')
+// getPublicInfo() { ... }
+```
+
+```typescript
+// decorators/roles.decorator.ts
+// Marca endpoints que requieren roles específicos
+
+import { SetMetadata } from '@nestjs/common';
+import { Role } from '../enums/role.enum';
+import { ROLES_KEY } from '../constants';
+
+// 👑 Decorator @Roles() - Especifica roles requeridos
+export const Roles = (...roles: Role[]) => SetMetadata(ROLES_KEY, roles);
+
+// ✨ Uso:
+// @Roles(Role.ADMIN)
+// @Get('admin-data')
+// getAdminData() { ... }
+//
+// @Roles(Role.ADMIN, Role.MODERATOR)
+// @Get('moderate')
+// moderate() { ... }
+```
+
+```typescript
+// decorators/custom-error.decorator.ts
+// Permite personalizar mensajes de error de autenticación
+
+import { SetMetadata } from '@nestjs/common';
+import { CUSTOM_ERROR_KEY } from '../constants';
+
+// 🎨 Interface para mensajes personalizados
+export interface CustomAuthError {
+  unauthorized?: string;  // Mensaje para 401 Unauthorized
+  forbidden?: string;     // Mensaje para 403 Forbidden
+}
+
+// 🎨 Decorator @CustomError() - Personaliza mensajes de error
+export const CustomError = (errors: CustomAuthError) => 
+  SetMetadata(CUSTOM_ERROR_KEY, errors);
+
+// ✨ Uso:
+// @CustomError({
+//   unauthorized: 'Necesitas estar logueado para ver esta información',
+//   forbidden: 'Solo administradores pueden acceder a este panel'
+// })
+// @Roles(Role.ADMIN)
+// @Get('admin-panel')
+// getAdminPanel() { ... }
+```
+
+### **Paso 4: Crear Guards de Seguridad**
+
+```typescript
+// guards/auth.guard.ts
+// Guard global que verifica autenticación JWT
+
+@Injectable()
+export class AuthGuard implements CanActivate {
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly authService: AuthService,
+    private readonly reflector: Reflector,
+  ) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    // 1. 🔍 Verificar si el endpoint es público
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (isPublic) {
+      // ✅ Endpoint público - permitir acceso sin autenticación
+      return true;
+    }
+
+    // 2. 📥 Extraer request y token
+    const request = context.switchToHttp().getRequest();
+    const token = this.extractTokenFromHeader(request);
+
+    if (!token) {
+      // 🚨 No hay token - obtener mensaje personalizado si existe
+      const customError = this.reflector.get<CustomAuthError>(
+        CUSTOM_ERROR_KEY,
+        context.getHandler(),
+      );
+      
+      const message = customError?.unauthorized || AUTH_MESSAGES.NO_TOKEN;
+      throw new UnauthorizedException(message);
+    }
+
+    try {
+      // 3. 🔍 Verificar y decodificar token
+      const payload = await this.jwtService.verifyAsync(token, {
+        secret: jwtConstants.secret,
+      });
+
+      // 4. 👤 Validar usuario y obtener datos actuales
+      const user = await this.authService.validateUser(payload);
+
+      // 5. ✅ Adjuntar usuario al request para uso posterior
+      request['user'] = user;
+
+      return true;
+    } catch (error) {
+      // 🚨 Token inválido - obtener mensaje personalizado si existe
+      const customError = this.reflector.get<CustomAuthError>(
+        CUSTOM_ERROR_KEY,
+        context.getHandler(),
+      );
+      
+      const message = customError?.unauthorized || AUTH_MESSAGES.INVALID_TOKEN;
+      throw new UnauthorizedException(message);
+    }
+  }
+
+  // 🔧 Helper: Extraer token del header Authorization
+  private extractTokenFromHeader(request: Request): string | undefined {
+    const [type, token] = request.headers['authorization']?.split(' ') ?? [];
+    return type === 'Bearer' ? token : undefined;
+  }
+}
+```
+
+```typescript
+// guards/role.guard.ts
+// Guard que verifica autorización por roles
+
+@Injectable()
+export class RoleGuard implements CanActivate {
+  constructor(private readonly reflector: Reflector) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    // 1. 🔍 Verificar si el endpoint es público
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (isPublic) {
+      // ✅ Endpoint público - no verificar roles
+      return true;
+    }
+
+    // 2. 📋 Obtener roles requeridos del decorator @Roles()
+    const requiredRoles = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (!requiredRoles) {
+      // ✅ No hay roles específicos requeridos - solo autenticación
+      return true;
+    }
+
+    // 3. 👤 Obtener usuario del request (adjuntado por AuthGuard)
+    const { user } = context.switchToHttp().getRequest();
+
+    if (!user) {
+      // 🚨 No hay usuario autenticado (no debería pasar si AuthGuard funciona)
+      throw new UnauthorizedException(AUTH_MESSAGES.UNAUTHORIZED_ACCESS);
+    }
+
+    // 4. 🔍 Verificar si el usuario tiene alguno de los roles requeridos
+    const hasRole = requiredRoles.some((role) => user.role === role);
+
+    if (!hasRole) {
+      // 🚨 Usuario no tiene rol suficiente - obtener mensaje personalizado
+      const customError = this.reflector.get<CustomAuthError>(
+        CUSTOM_ERROR_KEY,
+        context.getHandler(),
+      );
+      
+      const message = customError?.forbidden || 
+        `Se requiere uno de los siguientes roles: ${requiredRoles.join(', ')}`;
+      
+      throw new ForbiddenException(message);
+    }
+
+    // ✅ Usuario tiene rol suficiente
+    return true;
+  }
+}
+```
+
+### **Paso 5: Crear Filtro de Excepciones**
+
+```typescript
+// filters/auth-exception.filter.ts
+// Filtro global para manejar errores de autenticación y autorización
+
+@Catch(UnauthorizedException, ForbiddenException)
+export class AuthExceptionFilter implements ExceptionFilter {
+  catch(exception: UnauthorizedException | ForbiddenException, host: ArgumentsHost) {
+    const ctx = host.switchToHttp();
+    const response = ctx.getResponse<Response>();
+    const request = ctx.getRequest<Request>();
+
+    // 🎯 Determinar código de estado HTTP
+    const status = exception.getStatus();
+    
+    // 📝 Crear respuesta estructurada
+    const errorResponse = {
+      statusCode: status,
+      timestamp: new Date().toISOString(),
+      path: request.url,
+      method: request.method,
+      error: {
+        type: exception.name,
+        message: exception.message,
+        details: this.getErrorDetails(status),
+      },
+      // 🔍 Información adicional para debugging (solo en desarrollo)
+      ...(process.env.NODE_ENV === 'development' && {
+        stack: exception.stack,
+        cause: exception.cause,
+      }),
+    };
+
+    // 📊 Log del error para auditoría
+    console.error(`[AuthExceptionFilter] ${status} - ${exception.message}`, {
+      path: request.url,
+      method: request.method,
+      userAgent: request.headers['user-agent'],
+      timestamp: errorResponse.timestamp,
+    });
+
+    // 📤 Enviar respuesta estructurada
+    response.status(status).json(errorResponse);
+  }
+
+  // 🔧 Helper: Obtener detalles específicos según el tipo de error
+  private getErrorDetails(status: number): any {
+    switch (status) {
+      case 401:
+        return {
+          code: 'UNAUTHORIZED',
+          suggestion: 'Verifica que estés enviando un token válido en el header Authorization',
+          authHeader: 'Authorization: Bearer <tu-jwt-token>',
+        };
+      case 403:
+        return {
+          code: 'FORBIDDEN',
+          suggestion: 'Tu usuario no tiene permisos suficientes para acceder a este recurso',
+          contactInfo: 'Contacta al administrador si crees que esto es un error',
+        };
+      default:
+        return {
+          code: 'AUTH_ERROR',
+          suggestion: 'Error de autenticación o autorización',
+        };
+    }
+  }
+}
+```
+
+### **Paso 6: Crear Interceptor de Logging**
+
+```typescript
+// interceptors/auth-logging.interceptor.ts
+// Interceptor para logging de accesos y auditoría de seguridad
+
+@Injectable()
+export class AuthLoggingInterceptor implements NestInterceptor {
+  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+    const request = context.switchToHttp().getRequest();
+    const { method, url, headers, user } = request;
+    
+    // 📝 Información del request
+    const requestInfo = {
+      method,
+      url,
+      userAgent: headers['user-agent'],
+      ip: request.ip || request.connection.remoteAddress,
+      timestamp: new Date().toISOString(),
+      // 👤 Información del usuario autenticado (si existe)
+      user: user ? {
+        id: user.userId,
+        email: user.username,
+        role: user.role,
+      } : null,
+    };
+
+    // ⏱️ Tiempo de inicio para medir duración
+    const startTime = Date.now();
+
+    // 📊 Log de acceso
+    console.log(`[AUTH ACCESS] ${method} ${url}`, requestInfo);
+
+    return next.handle().pipe(
+      tap(() => {
+        // ✅ Log de éxito
+        const duration = Date.now() - startTime;
+        console.log(`[AUTH SUCCESS] ${method} ${url} - ${duration}ms`, {
+          ...requestInfo,
+          duration,
+          status: 'success',
+        });
+      }),
+      catchError((error) => {
+        // 🚨 Log de error
+        const duration = Date.now() - startTime;
+        console.error(`[AUTH ERROR] ${method} ${url} - ${duration}ms`, {
+          ...requestInfo,
+          duration,
+          status: 'error',
+          error: {
+            name: error.name,
+            message: error.message,
+          },
+        });
+        
+        // Re-throw el error para que continúe el flujo normal
+        throw error;
+      }),
+    );
+  }
+}
+```
+
+### **Paso 7: Crear Barrel Exports (index.ts)**
+
+```typescript
+// index.ts
+// Centraliza todas las exportaciones del módulo para importación limpia
+
+// 🏭 Servicios
+export { AuthService } from './services/auth.service';
+
+// 🛡️ Guards
+export { AuthGuard } from './guards/auth.guard';
+export { RoleGuard } from './guards/role.guard';
+
+// 🎨 Decoradores
+export { Public } from './decorators/public.decorator';
+export { Roles } from './decorators/roles.decorator';
+export { CustomError, CustomAuthError } from './decorators/custom-error.decorator';
+
+// 📊 Enums y tipos
+export { Role, RoleUtils } from './enums/role.enum';
+
+// 🔧 Constantes
+export { jwtConstants, AUTH_MESSAGES } from './constants';
+
+// 🚨 Filtros e interceptores
+export { AuthExceptionFilter } from './filters/auth-exception.filter';
+export { AuthLoggingInterceptor } from './interceptors/auth-logging.interceptor';
+
+// 📦 Módulo principal
+export { AuthModule } from './auth.module';
+
+// ✨ Ventajas del barrel export:
+// 1. Importación limpia: import { AuthGuard, Roles } from '@/auth'
+// 2. Encapsulación: Solo exportamos lo que queremos que sea público
+// 3. Refactoring: Cambios internos no afectan importaciones externas
+```
+
+### **Paso 8: Configurar el Módulo**
+
+```typescript
+// auth.module.ts
+// Ensambla todos los componentes del módulo de autenticación
+
+@Module({
+  imports: [
+    // 🔑 Configuración de JWT
+    JwtModule.register({
+      global: true,                    // JWT disponible globalmente
+      secret: jwtConstants.secret,     // Clave secreta
+      signOptions: { 
+        expiresIn: jwtConstants.expiresIn // Tiempo de expiración
+      },
+    }),
+    // 👥 Acceso al módulo de usuarios
+    forwardRef(() => UserModule),     // Referencia circular con UserModule
+  ],
+  providers: [
+    AuthService,                      // Servicio de autenticación
+    {
+      provide: APP_GUARD,             // 🛡️ Guard global de autenticación
+      useClass: AuthGuard,
+    },
+    {
+      provide: APP_GUARD,             // 🛡️ Guard global de roles (ejecuta después de AuthGuard)
+      useClass: RoleGuard,
+    },
+    {
+      provide: APP_FILTER,            // 🚨 Filtro global de excepciones de auth
+      useClass: AuthExceptionFilter,
+    },
+    {
+      provide: APP_INTERCEPTOR,       // 📊 Interceptor global de logging
+      useClass: AuthLoggingInterceptor,
+    },
+  ],
+  exports: [
+    AuthService,                      // Para usar en otros módulos
+    JwtService,                       // Para acceso directo si es necesario
+  ],
+})
+export class AuthModule {}
+
+// ✨ Configuración global significa:
+// - AuthGuard y RoleGuard se aplican automáticamente a TODOS los endpoints
+// - AuthExceptionFilter maneja TODOS los errores de auth
+// - AuthLoggingInterceptor registra TODOS los accesos
+// - Solo endpoints con @Public() se saltan la autenticación
+```
+
+## **🔄 4. FLUJO COMPLETO DE AUTENTICACIÓN**
+
+### **Ejemplo: Acceso a endpoint protegido con roles**
+
+```
+1. 📥 GET /admin/users
+   Headers: { "Authorization": "Bearer eyJhbGciOiJIUzI1NiIs..." }
+
+2. 📊 AuthLoggingInterceptor registra el acceso:
+   ├── IP, User-Agent, timestamp
+   └── Log: "[AUTH ACCESS] GET /admin/users"
+
+3. 🔍 AuthGuard verifica:
+   ├── ¿Tiene @Public()? → NO ❌
+   ├── ¿Hay token en header? → SÍ ✅
+   ├── ¿Token es válido? → SÍ ✅
+   ├── ¿Usuario existe? → SÍ ✅
+   └── Adjunta user al request: req.user = { userId: "123", username: "admin@test.com", role: "admin" }
+
+4. 🛡️ RoleGuard verifica:
+   ├── ¿Tiene @Public()? → NO ❌
+   ├── ¿Requiere roles específicos? → SÍ ✅ @Roles(Role.ADMIN)
+   ├── ¿Usuario tiene rol admin? → SÍ ✅
+   └── Permite continuar
+
+5. 🎯 Controller.getUsers() se ejecuta:
+   ├── Acceso a req.user.username y req.user.role
+   └── Retorna datos
+
+6. 📊 AuthLoggingInterceptor registra éxito:
+   └── Log: "[AUTH SUCCESS] GET /admin/users - 45ms"
+
+7. 📤 Respuesta se envía al cliente:
+   {
+     "users": [...],
+     "requestedBy": "admin@test.com",
+     "requestedAt": "2025-07-14T10:30:00.000Z"
+   }
+```
+
+### **Ejemplo: Error de autorización**
+
+```
+1. 📥 GET /admin/users
+   Headers: { "Authorization": "Bearer token-de-usuario-normal" }
+
+2. 🔍 AuthGuard verifica:
+   ├── Token válido ✅
+   └── req.user = { userId: "456", username: "user@test.com", role: "user" }
+
+3. 🛡️ RoleGuard verifica:
+   ├── Requiere roles: [Role.ADMIN] ✅
+   ├── Usuario tiene rol: "user" ❌
+   └── Throw ForbiddenException("Se requiere uno de los siguientes roles: admin")
+
+4. 🚨 AuthExceptionFilter captura:
+   ├── Status: 403 Forbidden
+   ├── Crea respuesta estructurada
+   └── Log: "[AuthExceptionFilter] 403 - Se requiere uno de los siguientes roles: admin"
+
+5. 📤 Respuesta de error se envía:
+   {
+     "statusCode": 403,
+     "timestamp": "2025-07-14T10:30:00.000Z",
+     "path": "/admin/users",
+     "method": "GET",
+     "error": {
+       "type": "ForbiddenException",
+       "message": "Se requiere uno de los siguientes roles: admin",
+       "details": {
+         "code": "FORBIDDEN",
+         "suggestion": "Tu usuario no tiene permisos suficientes..."
+       }
+     }
+   }
+```
+
+## **🎯 5. VENTAJAS DE ESTA ARQUITECTURA**
+
+### **✅ Seguridad Robusta**
+- **JWT Stateless**: No necesitamos sesiones en servidor
+- **Guards Globales**: Protección automática en todos los endpoints
+- **Role-Based Access**: Control granular de permisos
+- **Error Handling**: Mensajes consistentes y seguros
+
+### **✅ Flexibilidad y Configurabilidad**
+```typescript
+// Fácil marcar endpoints como públicos
+@Public()
+@Get('health')
+getHealth() { ... }
+
+// Fácil especificar roles requeridos
+@Roles(Role.ADMIN, Role.MODERATOR)
+@Get('moderate')
+moderate() { ... }
+
+// Fácil personalizar mensajes de error
+@CustomError({
+  unauthorized: 'Necesitas estar logueado',
+  forbidden: 'Solo admins pueden ver esto'
+})
+@Roles(Role.ADMIN)
+@Get('secret')
+getSecret() { ... }
+```
+
+### **✅ Observabilidad y Auditoría**
+- **Logging Automático**: Todos los accesos se registran
+- **Error Tracking**: Errores estructurados para análisis
+- **Métricas**: Tiempo de respuesta y patrones de uso
+- **Security Audit**: Intentos de acceso no autorizado
+
+### **✅ Mantenibilidad**
+- **Separación de Responsabilidades**: Cada componente tiene un propósito específico
+- **Reutilización**: Guards y decoradores reutilizables
+- **Testing**: Componentes isolados fáciles de testear
+- **Evolución**: Fácil agregar nuevos roles o funcionalidades
+
+## **🔧 6. PATRONES DE DISEÑO UTILIZADOS**
+
+### **Guard Pattern**
+```typescript
+// Verificación de condiciones antes de ejecutar lógica
+@Injectable()
+export class AuthGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean | Promise<boolean> {
+    // Lógica de verificación
+    return this.isAuthorized(context);
+  }
+}
+```
+
+### **Decorator Pattern**
+```typescript
+// Metadatos para modificar comportamiento
+export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
+export const Roles = (...roles: Role[]) => SetMetadata(ROLES_KEY, roles);
+```
+
+### **Strategy Pattern**
+```typescript
+// Diferentes estrategias de autenticación (JWT, OAuth, etc.)
+interface AuthStrategy {
+  validate(payload: any): Promise<any>;
+}
+
+class JwtStrategy implements AuthStrategy {
+  async validate(payload: any): Promise<any> {
+    return await this.userService.findById(payload.sub);
+  }
+}
+```
+
+### **Filter Pattern**
+```typescript
+// Filtrado y manejo específico de excepciones
+@Catch(UnauthorizedException, ForbiddenException)
+export class AuthExceptionFilter implements ExceptionFilter {
+  catch(exception: any, host: ArgumentsHost) {
+    // Manejo específico
+  }
+}
+```
+
+### **Interceptor Pattern**
+```typescript
+// Aspecto transversal (logging, métricas, etc.)
+export class AuthLoggingInterceptor implements NestInterceptor {
+  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+    // Lógica antes y después de la ejecución
+    return next.handle().pipe(/* transformaciones */);
+  }
+}
+```
+
+## **📊 7. EJEMPLO DE TESTING**
+
+```typescript
+// auth.service.spec.ts
+describe('AuthService', () => {
+  let service: AuthService;
+  let mockUserService: jest.Mocked<UserService>;
+  let mockJwtService: jest.Mocked<JwtService>;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        AuthService,
+        {
+          provide: UserService,
+          useValue: {
+            findByEmail: jest.fn(),
+            findById: jest.fn(),
+          },
+        },
+        {
+          provide: JwtService,
+          useValue: {
+            signAsync: jest.fn(),
+            verifyAsync: jest.fn(),
+          },
+        },
+      ],
+    }).compile();
+
+    service = module.get<AuthService>(AuthService);
+    mockUserService = module.get(UserService);
+    mockJwtService = module.get(JwtService);
+  });
+
+  describe('signIn', () => {
+    it('should return access token when credentials are valid', async () => {
+      // Arrange
+      const email = 'test@example.com';
+      const password = 'password123';
+      const mockUser = {
+        id: 'user-id',
+        email,
+        password,
+        role: 'user',
+        name: 'Test User',
+      };
+
+      mockUserService.findByEmail.mockResolvedValue(mockUser);
+      mockJwtService.signAsync.mockResolvedValue('jwt-token');
+
+      // Act
+      const result = await service.signIn(email, password);
+
+      // Assert
+      expect(result).toEqual({
+        access_token: 'jwt-token',
+        user: {
+          id: 'user-id',
+          email,
+          name: 'Test User',
+          role: 'user',
+          avatarUrl: undefined,
+        }
+      });
+      expect(mockUserService.findByEmail).toHaveBeenCalledWith(email);
+      expect(mockJwtService.signAsync).toHaveBeenCalledWith(
+        { sub: 'user-id', username: email, role: 'user' },
+        { secret: jwtConstants.secret, expiresIn: jwtConstants.expiresIn }
+      );
+    });
+
+    it('should throw UnauthorizedException when password is invalid', async () => {
+      // Arrange
+      const email = 'test@example.com';
+      const password = 'wrong-password';
+      const mockUser = {
+        id: 'user-id',
+        email,
+        password: 'correct-password',
+        role: 'user',
+        name: 'Test User',
+      };
+
+      mockUserService.findByEmail.mockResolvedValue(mockUser);
+
+      // Act & Assert
+      await expect(service.signIn(email, password)).rejects.toThrow(
+        UnauthorizedException
+      );
+      expect(mockJwtService.signAsync).not.toHaveBeenCalled();
+    });
+  });
+});
+```
+
+```typescript
+// auth.guard.spec.ts
+describe('AuthGuard', () => {
+  let guard: AuthGuard;
+  let mockJwtService: jest.Mocked<JwtService>;
+  let mockAuthService: jest.Mocked<AuthService>;
+  let mockReflector: jest.Mocked<Reflector>;
+
+  beforeEach(() => {
+    mockJwtService = {
+      verifyAsync: jest.fn(),
+    } as any;
+
+    mockAuthService = {
+      validateUser: jest.fn(),
+    } as any;
+
+    mockReflector = {
+      getAllAndOverride: jest.fn(),
+      get: jest.fn(),
+    } as any;
+
+    guard = new AuthGuard(mockJwtService, mockAuthService, mockReflector);
+  });
+
+  it('should allow access to public endpoints', async () => {
+    // Arrange
+    const context = createMockExecutionContext();
+    mockReflector.getAllAndOverride.mockReturnValue(true); // isPublic = true
+
+    // Act
+    const result = await guard.canActivate(context);
+
+    // Assert
+    expect(result).toBe(true);
+    expect(mockJwtService.verifyAsync).not.toHaveBeenCalled();
+  });
+
+  it('should throw UnauthorizedException when no token provided', async () => {
+    // Arrange
+    const context = createMockExecutionContext({
+      headers: {}, // No Authorization header
+    });
+    mockReflector.getAllAndOverride.mockReturnValue(false); // isPublic = false
+
+    // Act & Assert
+    await expect(guard.canActivate(context)).rejects.toThrow(
+      UnauthorizedException
+    );
+  });
+
+  it('should allow access when valid token provided', async () => {
+    // Arrange
+    const context = createMockExecutionContext({
+      headers: {
+        authorization: 'Bearer valid-jwt-token',
+      },
+    });
+    
+    mockReflector.getAllAndOverride.mockReturnValue(false); // isPublic = false
+    mockJwtService.verifyAsync.mockResolvedValue({
+      sub: 'user-id',
+      username: 'test@example.com',
+      role: 'user',
+    });
+    mockAuthService.validateUser.mockResolvedValue({
+      userId: 'user-id',
+      username: 'test@example.com',
+      role: 'user',
+    });
+
+    // Act
+    const result = await guard.canActivate(context);
+
+    // Assert
+    expect(result).toBe(true);
+    expect(mockJwtService.verifyAsync).toHaveBeenCalledWith(
+      'valid-jwt-token',
+      { secret: jwtConstants.secret }
+    );
+  });
+});
+
+// Helper function para crear mock execution context
+function createMockExecutionContext(requestData: any = {}) {
+  const mockRequest = {
+    headers: {},
+    ...requestData,
+  };
+
+  return {
+    switchToHttp: () => ({
+      getRequest: () => mockRequest,
+    }),
+    getHandler: () => ({}),
+    getClass: () => ({}),
+  } as any;
+}
+```
+
+## **🚨 8. MANEJO AVANZADO DE ERRORES**
+
+### **Errores Específicos por Situación**
+```typescript
+// En AuthService
+if (user.password !== password) {
+  throw new UnauthorizedException(AUTH_MESSAGES.INVALID_CREDENTIALS);
+}
+
+// En AuthGuard
+if (!token) {
+  const customError = this.reflector.get<CustomAuthError>(CUSTOM_ERROR_KEY, context.getHandler());
+  const message = customError?.unauthorized || AUTH_MESSAGES.NO_TOKEN;
+  throw new UnauthorizedException(message);
+}
+
+// En RoleGuard
+if (!hasRole) {
+  const customError = this.reflector.get<CustomAuthError>(CUSTOM_ERROR_KEY, context.getHandler());
+  const message = customError?.forbidden || `Se requiere uno de los siguientes roles: ${requiredRoles.join(', ')}`;
+  throw new ForbiddenException(message);
+}
+```
+
+### **Respuestas Estructuradas**
+```typescript
+// AuthExceptionFilter genera respuestas consistentes
+{
+  "statusCode": 401,
+  "timestamp": "2025-07-14T10:30:00.000Z",
+  "path": "/admin/users",
+  "method": "GET",
+  "error": {
+    "type": "UnauthorizedException",
+    "message": "Token de autenticación inválido o expirado",
+    "details": {
+      "code": "UNAUTHORIZED",
+      "suggestion": "Verifica que estés enviando un token válido en el header Authorization",
+      "authHeader": "Authorization: Bearer <tu-jwt-token>"
+    }
+  }
+}
+```
+
+## **📈 9. MÉTRICAS Y MONITOREO**
+
+### **Logging Automático**
+```typescript
+// AuthLoggingInterceptor registra automáticamente:
+console.log(`[AUTH ACCESS] GET /admin/users`, {
+  method: 'GET',
+  url: '/admin/users',
+  userAgent: 'Mozilla/5.0...',
+  ip: '192.168.1.100',
+  timestamp: '2025-07-14T10:30:00.000Z',
+  user: {
+    id: 'user-123',
+    email: 'admin@test.com',
+    role: 'admin'
+  }
+});
+
+console.log(`[AUTH SUCCESS] GET /admin/users - 45ms`, {
+  duration: 45,
+  status: 'success',
+  // ... resto de información
+});
+```
+
+### **Métricas de Seguridad**
+```typescript
+// Ejemplos de métricas que puedes extraer:
+// - Intentos de login fallidos por IP
+// - Endpoints más accedidos por rol
+// - Tokens expirados o inválidos
+// - Tiempos de respuesta por endpoint protegido
+// - Patrones de acceso sospechosos
+```
+
+## **🎯 10. RESUMEN DE COMPONENTES**
+
+### **📂 Core Authentication**
+- **AuthService**: Login, validación de usuarios, generación de JWT
+- **AuthGuard**: Verificación global de autenticación
+- **JwtStrategy**: Configuración y validación de tokens JWT
+
+### **📂 Authorization & Roles**
+- **RoleGuard**: Verificación de permisos por roles
+- **Role Enum**: Definición de roles del sistema
+- **@Roles Decorator**: Especificar roles requeridos en endpoints
+
+### **📂 Error Handling**
+- **AuthExceptionFilter**: Manejo global de errores de auth
+- **CustomError Decorator**: Personalización de mensajes de error
+- **Structured Responses**: Respuestas consistentes y informativas
+
+### **📂 Observability**
+- **AuthLoggingInterceptor**: Logging automático de accesos
+- **Security Audit**: Registro de intentos de acceso
+- **Performance Metrics**: Tiempos de respuesta y uso
+
+### **📂 Developer Experience**
+- **@Public Decorator**: Marcar endpoints públicos fácilmente
+- **Barrel Exports**: Importaciones limpias y organizadas
+- **TypeScript Support**: Tipado fuerte y autocompletado
+- **Testing Support**: Componentes testeable y mockeable
+
+---
+
+Esta arquitectura de autenticación te proporciona una seguridad robusta, flexible y mantenible para cualquier aplicación NestJS empresarial. Cada componente está diseñado para ser modular, testeable y escalable.

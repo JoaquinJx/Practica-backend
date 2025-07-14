@@ -2,6 +2,7 @@ import { Controller, Get, Post, Put, Delete, UseGuards, Request, Body, Param } f
 import { AuthGuard } from 'src/auth/guards/auth.guard';
 import { RoleGuard } from 'src/auth/guards/role.guard';
 import { Roles } from 'src/auth/decorators/roles.decorator';
+import { CustomErrorMessages } from 'src/auth/decorators/custom-error.decorator';
 import { Role } from 'src/auth/enums/role.enum';
 
 // Guards aplicados a TODO el controlador
@@ -21,6 +22,13 @@ export class AdminController {
   // Este método AÑADE RoleGuard además del AuthGuard del controlador
   @UseGuards(RoleGuard)
   @Roles(Role.ADMIN)
+  @CustomErrorMessages({
+    forbidden: 'Solo los administradores pueden acceder a la lista de usuarios',
+    suggestions: [
+      'Contacta al administrador del sistema para obtener permisos de administrador',
+      'Verifica que tu cuenta tenga el rol correcto asignado'
+    ]
+  })
   @Get('users')
   getUsers(@Request() req: any) {
     return { 
@@ -44,6 +52,14 @@ export class AdminController {
   // Este método AÑADE RoleGuard solo para ADMIN
   @UseGuards(RoleGuard)
   @Roles(Role.ADMIN)
+  @CustomErrorMessages({
+    forbidden: 'Solo los administradores pueden eliminar usuarios',
+    unauthorized: 'Debes estar autenticado para realizar esta acción',
+    suggestions: [
+      'Esta es una operación crítica que requiere permisos de administrador',
+      'Contacta al administrador principal si necesitas realizar esta acción'
+    ]
+  })
   @Delete('user/:id')
   deleteUser(@Param('id') id: string, @Request() req: any) {
     return { 
