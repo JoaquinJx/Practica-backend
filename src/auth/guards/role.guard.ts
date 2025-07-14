@@ -1,4 +1,4 @@
-import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { Role } from '../enums/role.enum';
@@ -39,7 +39,7 @@ export class RoleGuard implements CanActivate {
     const token = this.extractTokenFromHeader(request);
 
     if (!token) {
-      return false;
+      throw new UnauthorizedException('No token provided for role verification');
     }
 
     try {
@@ -52,15 +52,32 @@ export class RoleGuard implements CanActivate {
       const user = await this.userService.findByEmail(payload.username);
       
       if (!user) {
-        return false;
+        throw new UnauthorizedException('User not found');
       }
 
       const userRole = user.role as Role;
       
       // Verificar si el usuario tiene alguno de los roles requeridos
-      return requiredRoles.some((role) => userRole === role);
-    } catch {
-      return false;
+      const hasRequiredRole = requiredRoles.some((role) => userRole === role);
+      
+      if (!hasRequiredRole) {
+        throw new ForbiddenException(
+          `Access denied. Required role(s): ${requiredRoles.join(', ')}. Your role: ${userRole}`
+        );
+      }
+
+      // Añadir información del usuario al request para uso posterior
+      request['user'] = { ...payload, role: userRole };
+      
+      return true;
+    } catch (error) {
+      // Si ya es una excepción de NestJS, la relanzamos
+      if (error instanceof UnauthorizedException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      
+      // Para otros errores, lanzamos una excepción genérica
+      throw new UnauthorizedException('Role verification failed');
     }
   }
 

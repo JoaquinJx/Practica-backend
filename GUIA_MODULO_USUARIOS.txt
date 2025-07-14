@@ -1,0 +1,751 @@
+# 📚 **Guía Completa: Módulo de Usuarios NestJS - Paso a Paso**
+
+Te explico cómo funciona todo el módulo de usuarios que hemos construido, siguiendo las mejores prácticas de arquitectura hexagonal y Domain-Driven Design (DDD).
+
+## **🏗️ 1. ARQUITECTURA GENERAL**
+
+```
+src/users/
+├── users.module.ts                    # Módulo principal
+├── application/                       # Capa de aplicación
+│   ├── dto/                          # Data Transfer Objects
+│   │   ├── create.user.dto.ts        # DTO para crear usuario
+│   │   ├── update.user.dto.ts        # DTO para actualizar usuario
+│   │   ├── login.dto.ts              # DTO para login
+│   │   └── user.response.dto.ts      # DTO para respuestas
+│   └── services/
+│       └── user.service.ts           # Casos de uso/Servicios de aplicación
+├── domain/                           # Capa de dominio
+│   ├── entities/
+│   │   └── user.entity.ts            # Entidad de dominio
+│   └── interfaces/
+│       └── user.repository.interface.ts # Contrato del repositorio
+├── infrastructure/                    # Capa de infraestructura
+│   ├── controllers/
+│   │   ├── user.controller.ts        # Endpoints de usuarios
+│   │   ├── admin.controller.ts       # Endpoints de administración
+│   │   └── public.controller.ts      # Endpoints públicos
+│   └── repositories/
+│       └── prisma-user.repository.ts # Implementación con Prisma
+└── utils/                            # Utilidades (si las hay)
+```
+
+## **🔍 2. PRINCIPIOS ARQUITECTÓNICOS APLICADOS**
+
+### **A. Arquitectura Hexagonal (Puertos y Adaptadores)**
+```
+┌─────────────────────────┐
+│     CONTROLLERS         │ ← Puerto de entrada (HTTP)
+│   (Infrastructure)      │
+└─────────┬───────────────┘
+          │
+┌─────────▼───────────────┐
+│      SERVICES           │ ← Casos de uso
+│    (Application)        │
+└─────────┬───────────────┘
+          │
+┌─────────▼───────────────┐
+│      ENTITIES           │ ← Lógica de negocio
+│      (Domain)           │
+└─────────┬───────────────┘
+          │
+┌─────────▼───────────────┐
+│    REPOSITORIES         │ ← Puerto de salida (Base de datos)
+│   (Infrastructure)      │
+└─────────────────────────┘
+```
+
+### **B. Domain-Driven Design (DDD)**
+- **Domain**: Contiene la lógica de negocio pura
+- **Application**: Orquesta los casos de uso
+- **Infrastructure**: Detalles técnicos de implementación
+
+## **📋 3. PASO A PASO: CONSTRUCCIÓN DEL MÓDULO**
+
+### **Paso 1: Definir la Entidad de Dominio**
+
+```typescript
+// domain/entities/user.entity.ts
+// Esta es la representación "perfecta" de un usuario en nuestro dominio
+
+export interface CreateUser {
+  email: string;
+  password: string;
+  name: string;
+  role: string;
+  avatarUrl?: string;
+}
+
+export interface User1 {
+  id: string;
+  email: string;
+  password: string;
+  name: string;
+  avatarUrl?: string | null;
+  role: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export class User {
+  constructor(
+    public readonly id: string,
+    public readonly email: string,
+    public readonly password: string,
+    public readonly name: string,
+    public readonly role: string,
+    public readonly avatarUrl?: string | null,
+    public readonly createdAt?: Date,
+    public readonly updatedAt?: Date,
+  ) {}
+
+  // ✨ Método de factoría: Convierte datos de BD a entidad de dominio
+  static fromPersistence(raw: any): User {
+    return new User(
+      raw.id,
+      raw.email,
+      raw.password,
+      raw.name,
+      raw.role,
+      raw.avatarUrl,
+      raw.createdAt,
+      raw.updatedAt,
+    );
+  }
+
+  // ✨ Método de conversión: Entidad de dominio a datos de BD
+  toPersistence(): any {
+    return {
+      id: this.id,
+      email: this.email,
+      password: this.password,
+      name: this.name,
+      role: this.role,
+      avatarUrl: this.avatarUrl,
+      createdAt: this.createdAt,
+      updatedAt: this.updatedAt,
+    };
+  }
+
+  // 🔒 Lógica de negocio: ¿El usuario es administrador?
+  isAdmin(): boolean {
+    return this.role === 'admin';
+  }
+
+  // 🔒 Lógica de negocio: ¿El usuario puede moderar?
+  canModerate(): boolean {
+    return this.role === 'admin' || this.role === 'moderator';
+  }
+}
+```
+
+### **Paso 2: Definir el Contrato del Repositorio**
+
+```typescript
+// domain/interfaces/user.repository.interface.ts
+// Esto define QUÉ operaciones necesitamos, no CÓMO implementarlas
+
+export interface IUserRepository {
+  // 📝 Operaciones CRUD básicas
+  create(userEntity: CreateUser): Promise<User1>;
+  update(id: string, userEntity: Partial<User>): Promise<User | null>;
+  delete(id: string): Promise<boolean>;
+  
+  // 🔍 Operaciones de consulta
+  findById(id: string): Promise<User | null>;
+  findByEmail(email: string): Promise<User | null>;
+  findAll(): Promise<User[]>;
+}
+
+// ✨ Ventajas de esta interfaz:
+// 1. Desacoplamiento: El dominio no conoce Prisma, MongoDB, etc.
+// 2. Testabilidad: Podemos crear mocks fácilmente
+// 3. Flexibilidad: Cambiar de BD sin afectar lógica de negocio
+```
+
+### **Paso 3: Crear los DTOs (Data Transfer Objects)**
+
+```typescript
+// application/dto/create.user.dto.ts
+// Define qué datos necesitamos para crear un usuario
+
+export class CreateUserDto {
+  email: string;      // ✅ Requerido
+  password: string;   // ✅ Requerido  
+  name: string;       // ✅ Requerido
+  role: string;       // ✅ Requerido (user, admin, moderator)
+  avatarUrl?: string; // ❓ Opcional
+}
+
+// application/dto/update.user.dto.ts
+// Define qué datos se pueden actualizar (todos opcionales)
+
+export class UpdateUserDto {
+  email?: string;     // ❓ Opcional
+  password?: string;  // ❓ Opcional
+  name?: string;      // ❓ Opcional
+  role?: string;      // ❓ Opcional
+  avatarUrl?: string; // ❓ Opcional
+}
+
+// application/dto/user.response.dto.ts
+// Define qué datos enviamos al cliente (sin password)
+
+export class UserResponseDto {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  avatarUrl?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  
+  // 🚫 Nota: NO incluimos password por seguridad
+}
+```
+
+### **Paso 4: Implementar el Repositorio con Prisma**
+
+```typescript
+// infrastructure/repositories/prisma-user.repository.ts
+// Implementa CÓMO guardamos/obtenemos datos usando Prisma
+
+@Injectable()
+export class PrismaUserRepository implements IUserRepository {
+  constructor(private readonly prisma: PrismaService) {}
+
+  // 📝 CREATE: Crear nuevo usuario
+  async create(userEntity: CreateUser): Promise<User1> {
+    try {
+      const createdPrismaUser = await this.prisma.user.create({
+        data: userEntity, // Prisma crea automáticamente id, createdAt, updatedAt
+      });
+      return createdPrismaUser as User1;
+    } catch (error) {
+      // 🚨 Manejo específico de errores de Prisma
+      if (error instanceof PrismaClientKnownRequestError && error.code === 'P2002') {
+        // P2002 = Violación de restricción única (email duplicado)
+        throw new Error(`Conflict: User with email "${userEntity.email}" already exists.`);
+      }
+      throw new Error(`Failed to create user: ${error.message}`);
+    }
+  }
+
+  // 📝 UPDATE: Actualizar usuario existente
+  async update(id: string, userEntity: Partial<User>): Promise<User | null> {
+    try {
+      // 🎯 Solo actualizamos campos que tienen valor
+      const updateData: any = {};
+      if (userEntity.email) updateData.email = userEntity.email;
+      if (userEntity.password) updateData.password = userEntity.password;
+      if (userEntity.name) updateData.name = userEntity.name;
+      if (userEntity.avatarUrl) updateData.avatarUrl = userEntity.avatarUrl;
+      if (userEntity.role) updateData.role = userEntity.role;
+
+      const updatedPrismaUser = await this.prisma.user.update({
+        where: { id },
+        data: updateData,
+      });
+      
+      return User.fromPersistence(updatedPrismaUser);
+    } catch (error) {
+      if (error instanceof PrismaClientKnownRequestError && error.code === 'P2025') {
+        // P2025 = Registro no encontrado
+        return null;
+      }
+      throw new Error(`Failed to update user with ID ${id}: ${error.message}`);
+    }
+  }
+
+  // 🗑️ DELETE: Eliminar usuario
+  async delete(id: string): Promise<boolean> {
+    try {
+      await this.prisma.user.delete({ where: { id } });
+      return true; // ✅ Eliminación exitosa
+    } catch (error) {
+      if (error instanceof PrismaClientKnownRequestError && error.code === 'P2025') {
+        return false; // ❌ Usuario no encontrado
+      }
+      throw new Error(`Failed to delete user with ID ${id}: ${error.message}`);
+    }
+  }
+
+  // 🔍 FIND BY ID: Buscar por ID
+  async findById(id: string): Promise<User | null> {
+    try {
+      const prismaUser = await this.prisma.user.findUnique({ where: { id } });
+      return prismaUser ? User.fromPersistence(prismaUser) : null;
+    } catch (error) {
+      throw new Error(`Failed to retrieve user by ID ${id}: ${error.message}`);
+    }
+  }
+
+  // 🔍 FIND BY EMAIL: Buscar por email (para login)
+  async findByEmail(email: string): Promise<User | null> {
+    try {
+      const prismaUser = await this.prisma.user.findUnique({ where: { email } });
+      return prismaUser ? User.fromPersistence(prismaUser) : null;
+    } catch (error) {
+      throw new Error(`Failed to retrieve user by email ${email}: ${error.message}`);
+    }
+  }
+
+  // 📋 FIND ALL: Obtener todos los usuarios
+  async findAll(): Promise<User[]> {
+    try {
+      const prismaUsers = await this.prisma.user.findMany();
+      return prismaUsers.map(User.fromPersistence); // Convertir cada uno a entidad
+    } catch (error) {
+      throw new Error(`Failed to retrieve all users: ${error.message}`);
+    }
+  }
+}
+```
+
+### **Paso 5: Crear el Servicio de Aplicación (Casos de Uso)**
+
+```typescript
+// application/services/user.service.ts
+// Orquesta los casos de uso del negocio
+
+@Injectable()
+export class UserService {
+  constructor(
+    @Inject('IUserRepository') // 🔌 Inyección por interfaz, no implementación
+    private readonly userRepository: IUserRepository,
+  ) {}
+
+  // 🎯 CASO DE USO: Crear nuevo usuario
+  async createUser(createDto: CreateUserDto): Promise<User1> {
+    // 🔍 Validaciones de negocio podrían ir aquí
+    // Por ejemplo: validar formato de email, fortaleza de password, etc.
+    
+    return this.userRepository.create(createDto);
+  }
+
+  // 🎯 CASO DE USO: Actualizar usuario existente
+  async updateUser(id: string, updateDto: UpdateUserDto): Promise<User> {
+    // 🔍 Verificar que el usuario existe
+    const existingUser = await this.userRepository.findById(id);
+    if (!existingUser) {
+      throw new NotFoundException(`Usuario con ID "${id}" no encontrado durante la operación de actualización.`);
+    }
+
+    try {
+      const updatedUser = await this.userRepository.update(id, updateDto);
+      if (!updatedUser) {
+        throw new NotFoundException(`Usuario con ID "${id}" no encontrado durante la operación de actualización.`);
+      }
+      return updatedUser;
+    } catch (error) {
+      if (error.message.includes('email already in use')) {
+        throw new ConflictException(`No se puede actualizar el usuario: el email "${updateDto.email}" ya está en uso.`);
+      }
+      throw new Error('No se pudo procesar la solicitud de actualización de usuario.');
+    }
+  }
+
+  // 🎯 CASO DE USO: Buscar usuario por ID
+  async findById(id: string): Promise<User> {
+    const user = await this.userRepository.findById(id);
+    if (!user) {
+      throw new NotFoundException(`Usuario con ID "${id}" no encontrado.`);
+    }
+    return user;
+  }
+
+  // 🎯 CASO DE USO: Buscar usuario por email (usado en login)
+  async findByEmail(email: string): Promise<User> {
+    const user = await this.userRepository.findByEmail(email);
+    if (!user) {
+      throw new NotFoundException(`Usuario con email "${email}" no encontrado.`);
+    }
+    return user;
+  }
+
+  // 🎯 CASO DE USO: Eliminar usuario
+  async deleteUser(id: string): Promise<boolean> {
+    try {
+      const deleted = await this.userRepository.delete(id);
+      if (!deleted) {
+        throw new NotFoundException(`Usuario con ID "${id}" no encontrado para eliminación.`);
+      }
+      return true;
+    } catch (error) {
+      throw new Error('No se pudo procesar la solicitud de eliminación de usuario.');
+    }
+  }
+
+  // 🎯 CASO DE USO: Obtener todos los usuarios
+  async findAll(): Promise<User[]> {
+    return this.userRepository.findAll();
+  }
+}
+```
+
+### **Paso 6: Crear los Controladores (Puertos de Entrada)**
+
+```typescript
+// infrastructure/controllers/user.controller.ts
+// Maneja requests HTTP relacionadas con usuarios
+
+@Controller('users')
+export class UserController {
+  constructor(private readonly userService: UserService) {}
+  
+  // 🔓 ENDPOINT PÚBLICO: Crear usuario (registro)
+  @Public() // Cualquiera puede registrarse
+  @Post()
+  create(@Body() createUserDto: CreateUserDto) {
+    return this.userService.createUser(createUserDto);
+  }
+
+  // 🔒 ENDPOINT PROTEGIDO: Obtener perfil del usuario autenticado
+  @Get('profile')
+  getProfile(@Request() req: any) {
+    // req.user viene del AuthGuard
+    return this.userService.findByEmail(req.user.username);
+  }
+
+  // 👑 ENDPOINT PARA ADMIN: Ver información de administradores solamente
+  @Roles(Role.ADMIN)
+  @Get('admin-only')
+  getAdminData(@Request() req: any) {
+    return {
+      message: 'Este endpoint solo es accesible para administradores',
+      user: req.user
+    };
+  }
+
+  // 👑🛡️ ENDPOINT PARA ADMIN/MODERADOR: Funciones de moderación
+  @Roles(Role.ADMIN, Role.MODERATOR)
+  @Get('moderator-admin')
+  getModeratorOrAdminData(@Request() req: any) {
+    return {
+      message: 'Este endpoint es accesible para moderadores y administradores',
+      user: req.user
+    };
+  }
+
+  // 👑 ENDPOINT PARA ADMIN: Eliminar usuarios
+  @Roles(Role.ADMIN)
+  @Delete(':id')
+  deleteUser(@Param('id') id: string, @Request() req: any) {
+    return {
+      message: `Usuario ${id} eliminado por ${req.user.username}`,
+      deletedBy: req.user
+    };
+  }
+
+  // 🔒 ENDPOINT PROTEGIDO: Actualizar perfil
+  @Put('profile')
+  updateProfile(@Request() req: any, @Body() updateData: any) {
+    return {
+      message: 'Perfil actualizado',
+      user: req.user.username,
+      data: updateData
+    };
+  }
+}
+```
+
+### **Paso 7: Configurar el Módulo**
+
+```typescript
+// users.module.ts
+// Ensambla todas las piezas del módulo
+
+@Module({
+  imports: [
+    PrismaModule,                    // Para acceso a base de datos
+    forwardRef(() => AuthModule)     // Referencia circular con AuthModule
+  ],
+  controllers: [
+    UserController,                  // Endpoints de usuarios
+    AdminController,                 // Endpoints de administración
+    PublicController                 // Endpoints públicos
+  ],
+  providers: [
+    {
+      provide: 'IUserRepository',    // 🔌 Registro de la interfaz
+      useClass: PrismaUserRepository // 🔧 Con implementación específica
+    },
+    UserService                      // Servicio de casos de uso
+  ],
+  exports: [UserService]             // Para usar en otros módulos (AuthModule)
+})
+export class UserModule {}
+```
+
+## **🔄 4. FLUJO COMPLETO DE UNA OPERACIÓN**
+
+### **Ejemplo: Crear un nuevo usuario**
+
+```
+1. 📥 POST /users
+   Body: { "email": "user@test.com", "password": "123456", "name": "Test User", "role": "user" }
+
+2. 🔍 AuthGuard verifica:
+   ├── ¿Tiene @Public()? → SÍ ✅
+   └── Permite continuar sin verificar token
+
+3. 🛡️ RoleGuard verifica:
+   ├── ¿Tiene @Public()? → SÍ ✅  
+   └── Permite continuar sin verificar roles
+
+4. 🎯 UserController.create() se ejecuta:
+   ├── Recibe CreateUserDto
+   └── Llama a userService.createUser(dto)
+
+5. ⚙️ UserService.createUser() se ejecuta:
+   ├── Podría aplicar validaciones de negocio
+   └── Llama a userRepository.create(dto)
+
+6. 💾 PrismaUserRepository.create() se ejecuta:
+   ├── Convierte DTO a datos de Prisma
+   ├── Ejecuta prisma.user.create()
+   ├── Maneja errores específicos (email duplicado)
+   └── Retorna User1
+
+7. 📤 Respuesta se envía al cliente:
+   {
+     "id": "uuid-generado",
+     "email": "user@test.com",
+     "name": "Test User",
+     "role": "user",
+     "createdAt": "2025-07-14T10:30:00.000Z",
+     "updatedAt": "2025-07-14T10:30:00.000Z"
+   }
+```
+
+## **🎯 5. VENTAJAS DE ESTA ARQUITECTURA**
+
+### **✅ Separación de Responsabilidades**
+- **Domain**: Solo lógica de negocio pura
+- **Application**: Casos de uso y orquestación
+- **Infrastructure**: Detalles técnicos (HTTP, BD, etc.)
+
+### **✅ Testabilidad**
+```typescript
+// Fácil crear mocks para testing
+const mockUserRepository: IUserRepository = {
+  create: jest.fn(),
+  findById: jest.fn(),
+  findByEmail: jest.fn(),
+  // ... otros métodos
+};
+
+// Test del servicio sin tocar la BD
+const userService = new UserService(mockUserRepository);
+```
+
+### **✅ Flexibilidad**
+```typescript
+// Cambiar de Prisma a MongoDB sin afectar lógica de negocio
+@Module({
+  providers: [
+    {
+      provide: 'IUserRepository',
+      useClass: MongoUserRepository, // En lugar de PrismaUserRepository
+    },
+  ],
+})
+```
+
+### **✅ Mantenibilidad**
+- Cada capa tiene una responsabilidad clara
+- Cambios en una capa no afectan las otras
+- Código más legible y organizado
+
+### **✅ Escalabilidad**
+- Fácil agregar nuevos casos de uso
+- Fácil cambiar implementaciones
+- Fácil agregar nuevos endpoints
+
+## **🔧 6. PATRONES DE DISEÑO UTILIZADOS**
+
+### **Repository Pattern**
+```typescript
+// Interfaz define el contrato
+interface IUserRepository {
+  findById(id: string): Promise<User | null>;
+}
+
+// Implementación específica para Prisma
+class PrismaUserRepository implements IUserRepository {
+  async findById(id: string): Promise<User | null> {
+    // Implementación específica
+  }
+}
+```
+
+### **Dependency Injection**
+```typescript
+// Servicio no conoce la implementación específica
+constructor(
+  @Inject('IUserRepository') // Inyecta por interfaz
+  private readonly userRepository: IUserRepository, // No PrismaUserRepository
+) {}
+```
+
+### **Factory Pattern**
+```typescript
+// Crear entidades de dominio desde datos raw
+static fromPersistence(raw: any): User {
+  return new User(raw.id, raw.email, /* ... */);
+}
+```
+
+### **DTO Pattern**
+```typescript
+// Separar datos de entrada/salida de entidades internas
+class CreateUserDto {
+  email: string;
+  password: string;
+  // ...
+}
+```
+
+## **📊 7. EJEMPLO DE TESTING**
+
+```typescript
+// user.service.spec.ts
+describe('UserService', () => {
+  let service: UserService;
+  let mockRepository: jest.Mocked<IUserRepository>;
+
+  beforeEach(() => {
+    mockRepository = {
+      create: jest.fn(),
+      findByEmail: jest.fn(),
+      // ... otros métodos mockeados
+    };
+
+    service = new UserService(mockRepository);
+  });
+
+  describe('createUser', () => {
+    it('should create a user successfully', async () => {
+      // Arrange
+      const createDto: CreateUserDto = {
+        email: 'test@example.com',
+        password: 'password123',
+        name: 'Test User',
+        role: 'user'
+      };
+
+      const expectedUser: User1 = {
+        id: 'uuid-123',
+        email: createDto.email,
+        name: createDto.name,
+        // ... otros campos
+      };
+
+      mockRepository.create.mockResolvedValue(expectedUser);
+
+      // Act
+      const result = await service.createUser(createDto);
+
+      // Assert
+      expect(mockRepository.create).toHaveBeenCalledWith(createDto);
+      expect(result).toEqual(expectedUser);
+    });
+
+    it('should throw error when email already exists', async () => {
+      // Arrange
+      const createDto: CreateUserDto = { /* ... */ };
+      mockRepository.create.mockRejectedValue(
+        new Error('Conflict: User with email "test@example.com" already exists.')
+      );
+
+      // Act & Assert
+      await expect(service.createUser(createDto)).rejects.toThrow('Conflict');
+    });
+  });
+});
+```
+
+## **🚨 8. MANEJO DE ERRORES**
+
+### **A nivel de Repositorio (Errores de BD)**
+```typescript
+catch (error) {
+  if (error instanceof PrismaClientKnownRequestError && error.code === 'P2002') {
+    throw new Error(`Conflict: User with email "${userEntity.email}" already exists.`);
+  }
+  throw new Error(`Failed to create user: ${error.message}`);
+}
+```
+
+### **A nivel de Servicio (Errores de Negocio)**
+```typescript
+const existingUser = await this.userRepository.findById(id);
+if (!existingUser) {
+  throw new NotFoundException(`Usuario con ID "${id}" no encontrado.`);
+}
+```
+
+### **A nivel de Controlador (Errores HTTP)**
+```typescript
+// Los errores se manejan automáticamente por el AuthExceptionFilter
+// que convierte excepciones en respuestas HTTP estructuradas
+```
+
+## **📈 9. MÉTRICAS Y MONITOREO**
+
+```typescript
+// Ejemplo de como agregar métricas
+@Injectable()
+export class UserService {
+  
+  async createUser(createDto: CreateUserDto): Promise<User1> {
+    const startTime = Date.now();
+    
+    try {
+      const result = await this.userRepository.create(createDto);
+      
+      // Log de éxito
+      console.log(`User created successfully in ${Date.now() - startTime}ms`, {
+        email: createDto.email,
+        role: createDto.role
+      });
+      
+      return result;
+    } catch (error) {
+      // Log de error
+      console.error(`Failed to create user in ${Date.now() - startTime}ms`, {
+        email: createDto.email,
+        error: error.message
+      });
+      
+      throw error;
+    }
+  }
+}
+```
+
+## **🎯 10. RESUMEN DE COMPONENTES**
+
+### **📂 Domain Layer (Dominio)**
+- **User Entity**: Representa el concepto de usuario en el negocio
+- **IUserRepository Interface**: Define operaciones necesarias para usuarios
+- **Lógica de negocio**: Métodos como `isAdmin()`, `canModerate()`
+
+### **📂 Application Layer (Aplicación)**
+- **UserService**: Orquesta casos de uso del negocio
+- **DTOs**: Definen estructura de datos de entrada/salida
+- **Validaciones**: Reglas de negocio y validaciones
+
+### **📂 Infrastructure Layer (Infraestructura)**
+- **Controllers**: Maneja requests HTTP y responses
+- **PrismaUserRepository**: Implementación específica para base de datos
+- **Error Handling**: Manejo específico de errores de infraestructura
+
+### **📂 Module Configuration**
+- **Dependency Injection**: Configuración de servicios y repositorios
+- **Exports**: Qué servicios están disponibles para otros módulos
+- **Imports**: Qué módulos externos necesitamos
+
+---
+
+Esta arquitectura te da una base sólida, escalable y mantenible para manejar usuarios en cualquier aplicación NestJS. Cada componente tiene una responsabilidad específica y está desacoplado de los demás, lo que facilita el testing, mantenimiento y evolución del código.

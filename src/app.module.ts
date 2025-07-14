@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './shared/services/prisma.module';
 import { UserModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { AuthGuard } from './auth/guards/auth.guard';
 import { RoleGuard } from './auth/guards/role.guard';
+import { AuthExceptionFilter } from './auth/filters/auth-exception.filter';
+import { AuthLoggingInterceptor } from './auth/interceptors/auth-logging.interceptor';
 
 @Module({
   imports: [PrismaModule, UserModule, AuthModule],
@@ -19,6 +21,16 @@ import { RoleGuard } from './auth/guards/role.guard';
     {
       provide: APP_GUARD,
       useClass: RoleGuard,
+    },
+    // Filtro global para manejo de errores de autenticación
+    {
+      provide: APP_FILTER,
+      useClass: AuthExceptionFilter,
+    },
+    // Interceptor global para logging de autenticación
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: AuthLoggingInterceptor,
     },
   ],
 })
