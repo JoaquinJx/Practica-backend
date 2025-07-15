@@ -59,7 +59,7 @@ export class UserController {
     // 📋 LISTAR USUARIOS CON FILTROS - Solo Admin
     @Roles(Role.ADMIN)
     @Get()
-    findUsers(
+    async findUsers(
         @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
         @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
         @Query('role', RoleValidationPipe) role?: Role
@@ -68,7 +68,7 @@ export class UserController {
             message: 'Lista de usuarios con filtros',
             filters: { page, limit, role },
             // TODO: Implementar paginación en el service
-            users: this.userService.findAll()
+            users: await this.userService.findAll()
         };
     }
 
