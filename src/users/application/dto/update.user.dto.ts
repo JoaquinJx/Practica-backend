@@ -1,7 +1,8 @@
-import { IsOptional, IsString, MinLength, IsUrl, IsEmail, IsIn } from "class-validator";
+import { IsOptional, IsString, MinLength, IsUrl, IsEmail, IsIn, IsEnum } from "class-validator";
 import { CreateUserDto } from "./create.user.dto";
 import { ApiProperty, PartialType } from "@nestjs/swagger";
 import { Transform } from "class-transformer";
+import { Role } from 'src/auth/enums/role.enum';
 
 // Using PartialType to make all CreateUserDto fields optional
 export class UpdateUserDto extends PartialType(CreateUserDto) {
@@ -29,9 +30,8 @@ export class UpdateUserDto extends PartialType(CreateUserDto) {
     @IsUrl({},{message:'Avatar URL must be a valid URL.'})
     avatarUrl?: string;
 
-    @ApiProperty({description:'New role for the user (optional)', enum: ['user','admin','moderator'], required: false})
+    @ApiProperty({description:'New role for the user (optional)', enum: Role, required: false})
     @IsOptional()
-    @IsString()
-    @IsIn(['user','admin','moderator'],{message:'Role must be one of the following: user, admin, moderator.'})
-    role?: string;
+    @IsEnum(Role)
+    role?: Role;
 }
