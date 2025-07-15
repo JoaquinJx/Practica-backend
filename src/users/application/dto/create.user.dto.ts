@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsIn, IsNotEmpty, IsOptional, IsString, IsUrl, MinLength } from 'class-validator';
+import { IsEmail, IsIn, IsNotEmpty, IsOptional, IsString, IsUrl, MinLength, IsEnum } from 'class-validator';
+import { Role } from 'src/auth/enums/role.enum';
 
 export class CreateUserDto {
   @ApiProperty({ description: 'The unique email address for the user' })
@@ -27,10 +28,9 @@ export class CreateUserDto {
   @IsUrl({},{message:'Avatar URL must be a valid URL.'})
   avatarUrl?: string;
 
-  @ApiProperty({description:'User role in the system', enum: ['user','admin','moderator'], default: 'user'})
-  @IsString()
+  @ApiProperty({description:'User role in the system', enum: Role, default: Role.USER})
+  @IsEnum(Role)
   @IsOptional()
-  @IsIn(['user','admin','moderator'],{message:'Role must be one of the following: user, admin, moderator.'})
-  @Transform(({ value }) => value || 'user') // Default to 'user' if not provided
-  role?: string;
+  @Transform(({ value }) => value || Role.USER)
+  role?: Role;
 }

@@ -23,6 +23,7 @@ export class User {
     createdAt?: Date; // Para reconstruir desde la persistencia
     updatedAt?: Date; // Para reconstruir desde la persistencia
   }) {
+    this.id = data.id;
     this.email = data.email;
     this.password = data.password; // Ya debe venir hasheada
     this.name = data.name;
