@@ -321,4 +321,58 @@ describe('UserController', () => {
 
     });
     
+    describe('GET /users/:id - Find User by Id', () => {
+
+        beforeEach(() => {
+            jest.clearAllMocks(); // Asegurar que los mocks estén limpios para cada test
+        });
+
+        //CASO DE EXITO USUARIO ENCONTRADO 
+        it('should find user by id successfully', async () => {
+            const userId = '1';
+            const mockUser = {
+                id: '1',
+                email: 'user1@example.com',
+                name: 'User One',
+                role: Role.USER,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            };
+
+            mockUserService.findById.mockResolvedValue(mockUser);
+
+            const result = await userController.findUser(userId);
+
+            expect(result).toEqual(mockUser);
+            expect(mockUserService.findById).toHaveBeenCalledWith(userId);
+            expect(mockUserService.findById).toHaveBeenCalledTimes(1);
+        });
+
+        //CASO DE ERROR USUARIO NO ENCONTRADO
+        it('should return null when user not found', async () => {
+            const userId = '9999999';
+
+            mockUserService.findById.mockResolvedValue(null);
+
+            const result = await userController.findUser(userId);
+
+            expect(result).toBeNull();
+            expect(mockUserService.findById).toHaveBeenCalledWith(userId);
+            expect(mockUserService.findById).toHaveBeenCalledTimes(1);
+        });
+
+        //CASO DE ERROR SERVICIO LANZA EXCEPCION
+        it('should throw error when service throws exception', async () => {
+            const userId = '1';
+
+            mockUserService.findById.mockRejectedValue(new Error('Database connection failed'));   
+            
+            await expect(userController.findUser(userId))
+                .rejects
+                .toThrow('Database connection failed'); 
+
+            expect(mockUserService.findById).toHaveBeenCalledWith(userId);
+        });
+
+    });
 });
