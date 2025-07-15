@@ -1,11 +1,11 @@
 // src/users/infrastructure/repositories/prisma-user.repository.ts
 
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from 'src/shared/services/prisma.service';
-import { User, User1 } from 'src/users/domain/entities/user.entity';
-import { IUserRepository } from 'src/users/domain/interfaces/user.repository.interface';
+import { PrismaService } from '../../../shared/services/prisma.service';
+import { User, User1 } from '../../domain/entities/user.entity';
+import { IUserRepository } from '../../domain/interfaces/user.repository.interface';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
-import { CreateUser } from 'src/users/domain/entities/user.entity';
+import { CreateUser } from '../../domain/entities/user.entity';
 
 @Injectable()
 export class PrismaUserRepository implements IUserRepository {
