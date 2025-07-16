@@ -12,7 +12,8 @@ import { Body,
     Query, 
     DefaultValuePipe, 
     ParseIntPipe, 
-    Patch } from "@nestjs/common";
+    Patch,
+    UseInterceptors } from "@nestjs/common";
 
 import { CreateUserDto } from "src/users/application/dto/create.user.dto";
 
@@ -28,13 +29,16 @@ import { Role } from "src/auth/enums/role.enum";
 
 import { 
     EmailNormalizationPipe,
-    PasswordValidationPipe,
+    
     RoleValidationPipe,
-    NameValidationPipe,
-    AvatarUrlValidationPipe
+    
 } from "../../application/pipes";
 
+import { ExecutionTimeInterceptor } from "../interceptors/execution-time.interceptor";
+import { TransformResponseInterceptor } from "../interceptors/transform-response.interceptor";
+
 @Controller('users')
+@UseInterceptors(ExecutionTimeInterceptor, TransformResponseInterceptor)
 export class UserController {
     constructor(private readonly userService: UserService) {}
     

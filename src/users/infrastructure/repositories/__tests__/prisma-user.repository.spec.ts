@@ -2,11 +2,12 @@ import { PrismaUserRepository } from '../prisma-user.repository';
 import { PrismaService } from '../../../../shared/services/prisma.service';
 import { CreateUser, User1, User } from '../../../domain/entities/user.entity';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import { Test,TestingModule } from '@nestjs/testing';
 
 describe('PrismaUserRepository', () => {
     let prismaUserRepository: PrismaUserRepository;
     
-    let prismaService: PrismaService;
+    let prismaDb: PrismaService;
 
     beforeEach(async () => {
         const mockPrismaService = {
@@ -19,8 +20,15 @@ describe('PrismaUserRepository', () => {
             }
         };
 
-        prismaService = mockPrismaService as any;
-        prismaUserRepository = new PrismaUserRepository(prismaService);
+        const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        PrismaUserRepository,
+        { provide: PrismaService, useValue: mockPrismaService },
+      ],
+    }).compile();
+    prismaUserRepository = module.get<PrismaUserRepository>(PrismaUserRepository);
+    prismaDb = module.get<PrismaService>(PrismaService);
+
     });
 
     describe('create', () => {
@@ -44,12 +52,12 @@ describe('PrismaUserRepository', () => {
                 updatedAt: new Date('2025-01-01')
             };
 
-            (prismaService.user.create as jest.Mock).mockResolvedValue(mockCreatedUser);
+            (prismaDb.user.create as jest.Mock).mockResolvedValue(mockCreatedUser);
             
             const result = await prismaUserRepository.create(createUserData);
 
             expect(result).toEqual(mockCreatedUser);
-            expect(prismaService.user.create).toHaveBeenCalledWith({
+            expect(prismaDb.user.create).toHaveBeenCalledWith({
                 data: createUserData
             });
         });
@@ -67,7 +75,7 @@ describe('PrismaUserRepository', () => {
                 clientVersion: '5.0.0'
             });
 
-            (prismaService.user.create as jest.Mock).mockRejectedValue(mockPrismaError);
+            (prismaDb.user.create as jest.Mock).mockRejectedValue(mockPrismaError);
 
             await expect(prismaUserRepository.create(createUserData))
                 .rejects
@@ -84,7 +92,7 @@ describe('PrismaUserRepository', () => {
 
             const mockGenericError = new Error('Database connection failed');
 
-            (prismaService.user.create as jest.Mock).mockRejectedValue(mockGenericError);
+            (prismaDb.user.create as jest.Mock).mockRejectedValue(mockGenericError);
 
             await expect(prismaUserRepository.create(createUserData))
                 .rejects
@@ -109,14 +117,14 @@ describe('PrismaUserRepository', () => {
                 updatedAt: new Date('2025-01-02')
             };
 
-            (prismaService.user.update as jest.Mock).mockResolvedValue(mockUpdatedUser);
+            (prismaDb.user.update as jest.Mock).mockResolvedValue(mockUpdatedUser);
 
             const result = await prismaUserRepository.update('1', updateUserData);
 
             expect(result).toBeInstanceOf(User);
             expect(result?.email).toBe('updated@example.com');
             expect(result?.name).toBe('Updated Name');
-            expect(prismaService.user.update).toHaveBeenCalledWith({
+            expect(prismaDb.user.update).toHaveBeenCalledWith({
                 where: { id: '1' },
                 data: {
                     email: updateUserData.email,
@@ -136,7 +144,7 @@ describe('PrismaUserRepository', () => {
                 clientVersion: '5.0.0'
             });
 
-            (prismaService.user.update as jest.Mock).mockRejectedValue(mockPrismaError);
+            (prismaDb.user.update as jest.Mock).mockRejectedValue(mockPrismaError);
              
             const result = await prismaUserRepository.update(userId, updateUserData);
             
@@ -153,7 +161,7 @@ describe('PrismaUserRepository', () => {
                 clientVersion: '5.0.0'
             });
 
-            (prismaService.user.update as jest.Mock).mockRejectedValue(mockPrismaError);
+            (prismaDb.user.update as jest.Mock).mockRejectedValue(mockPrismaError);
 
             await expect(prismaUserRepository.update(userId, updateUserData))
                 .rejects
@@ -168,7 +176,7 @@ describe('PrismaUserRepository', () => {
 
             const mockGenericError = new Error('Database connection failed');
 
-            (prismaService.user.update as jest.Mock).mockRejectedValue(mockGenericError);
+            (prismaDb.user.update as jest.Mock).mockRejectedValue(mockGenericError);
 
             await expect(prismaUserRepository.update(userId, updateData))
                 .rejects
@@ -180,12 +188,12 @@ describe('PrismaUserRepository', () => {
         it('should delete a user successfully', async () => {
             const userId = '1';
 
-            (prismaService.user.delete as jest.Mock).mockResolvedValue(undefined);
+            (prismaDb.user.delete as jest.Mock).mockResolvedValue(undefined);
 
             const result = await prismaUserRepository.delete(userId);
 
             expect(result).toBe(true);
-            expect(prismaService.user.delete).toHaveBeenCalledWith({
+            expect(prismaDb.user.delete).toHaveBeenCalledWith({
                 where: { id: userId }
             });
         });
@@ -198,7 +206,7 @@ describe('PrismaUserRepository', () => {
                 clientVersion: '5.0.0'
             });
 
-            (prismaService.user.delete as jest.Mock).mockRejectedValue(mockPrismaError);
+            (prismaDb.user.delete as jest.Mock).mockRejectedValue(mockPrismaError);
 
             const result = await prismaUserRepository.delete(userId);
 
@@ -210,7 +218,7 @@ describe('PrismaUserRepository', () => {
 
             const mockGenericError = new Error('Database connection failed');
 
-            (prismaService.user.delete as jest.Mock).mockRejectedValue(mockGenericError);
+            (prismaDb.user.delete as jest.Mock).mockRejectedValue(mockGenericError);
 
             await expect(prismaUserRepository.delete(userId))
                 .rejects
@@ -232,13 +240,13 @@ describe('PrismaUserRepository', () => {
                 updatedAt: new Date('2025-01-01')
             };
 
-            (prismaService.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
+            (prismaDb.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
 
             const result = await prismaUserRepository.findByEmail(email);
 
             expect(result).toBeInstanceOf(User);
             expect(result?.email).toBe(email);
-            expect(prismaService.user.findUnique).toHaveBeenCalledWith({
+            expect(prismaDb.user.findUnique).toHaveBeenCalledWith({
                 where: { email }
             });
         });
@@ -246,12 +254,12 @@ describe('PrismaUserRepository', () => {
         it('should return null when user is not found', async () => {
             const email = 'nonexistent@example.com';
 
-            (prismaService.user.findUnique as jest.Mock).mockResolvedValue(null);
+            (prismaDb.user.findUnique as jest.Mock).mockResolvedValue(null);
 
             const result = await prismaUserRepository.findByEmail(email);
 
             expect(result).toBeNull();
-            expect(prismaService.user.findUnique).toHaveBeenCalledWith({
+            expect(prismaDb.user.findUnique).toHaveBeenCalledWith({
                 where: { email }
             });
         });
@@ -261,7 +269,7 @@ describe('PrismaUserRepository', () => {
 
             const mockGenericError = new Error('Database connection failed');
 
-            (prismaService.user.findUnique as jest.Mock).mockRejectedValue(mockGenericError);
+            (prismaDb.user.findUnique as jest.Mock).mockRejectedValue(mockGenericError);
 
             await expect(prismaUserRepository.findByEmail(email))
                 .rejects
@@ -283,14 +291,14 @@ describe('PrismaUserRepository', () => {
                 updatedAt: new Date('2025-01-01')
             };
 
-            (prismaService.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
+            (prismaDb.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
 
             const result = await prismaUserRepository.findById(userId);
 
             expect(result).toBeInstanceOf(User);
             expect(result?.id).toBe(userId);
             expect(result?.email).toBe('test@example.com');
-            expect(prismaService.user.findUnique).toHaveBeenCalledWith({
+            expect(prismaDb.user.findUnique).toHaveBeenCalledWith({
                 where: { id: userId }
             });
         });
@@ -298,12 +306,12 @@ describe('PrismaUserRepository', () => {
         it('should return null when user is not found', async () => {
             const userId = '999';
 
-            (prismaService.user.findUnique as jest.Mock).mockResolvedValue(null);
+            (prismaDb.user.findUnique as jest.Mock).mockResolvedValue(null);
 
             const result = await prismaUserRepository.findById(userId);
 
             expect(result).toBeNull();
-            expect(prismaService.user.findUnique).toHaveBeenCalledWith({
+            expect(prismaDb.user.findUnique).toHaveBeenCalledWith({
                 where: { id: userId }
             });
         });
@@ -313,7 +321,7 @@ describe('PrismaUserRepository', () => {
 
             const mockGenericError = new Error('Database connection failed');
 
-            (prismaService.user.findUnique as jest.Mock).mockRejectedValue(mockGenericError);
+            (prismaDb.user.findUnique as jest.Mock).mockRejectedValue(mockGenericError);
 
             await expect(prismaUserRepository.findById(userId))
                 .rejects
@@ -346,7 +354,7 @@ describe('PrismaUserRepository', () => {
                 }
             ];
 
-            (prismaService.user.findMany as jest.Mock).mockResolvedValue(mockUsers);
+            (prismaDb.user.findMany as jest.Mock).mockResolvedValue(mockUsers);
 
             const result = await prismaUserRepository.findAll();
 
@@ -357,23 +365,23 @@ describe('PrismaUserRepository', () => {
             expect(result[0].email).toBe('user1@example.com');
             expect(result[1].id).toBe('2');
             expect(result[1].email).toBe('user2@example.com');
-            expect(prismaService.user.findMany).toHaveBeenCalledWith();
+            expect(prismaDb.user.findMany).toHaveBeenCalledWith();
         });
 
         it('should return empty array when no users exist', async () => {
-            (prismaService.user.findMany as jest.Mock).mockResolvedValue([]);
+            (prismaDb.user.findMany as jest.Mock).mockResolvedValue([]);
 
             const result = await prismaUserRepository.findAll();
 
             expect(result).toEqual([]);
             expect(result).toHaveLength(0);
-            expect(prismaService.user.findMany).toHaveBeenCalledWith();
+            expect(prismaDb.user.findMany).toHaveBeenCalledWith();
         });
 
         it('should throw generic error for unexpected errors', async () => {
             const mockGenericError = new Error('Database connection failed');
 
-            (prismaService.user.findMany as jest.Mock).mockRejectedValue(mockGenericError);
+            (prismaDb.user.findMany as jest.Mock).mockRejectedValue(mockGenericError);
 
             await expect(prismaUserRepository.findAll())
                 .rejects

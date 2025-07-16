@@ -40,7 +40,7 @@ export class PrismaUserRepository implements IUserRepository {
 
       const updatedPrismaUser = await this.prisma.user.update({
         where: { id },
-        data: updateData,
+        data: userEntity,
       });
       return User.fromPersistence(updatedPrismaUser);
     } catch (error) {
