@@ -29,10 +29,9 @@ import { Role } from "src/auth/enums/role.enum";
 
 import { 
     EmailNormalizationPipe,
-    PasswordValidationPipe,
+    
     RoleValidationPipe,
-    NameValidationPipe,
-    AvatarUrlValidationPipe
+    
 } from "../../application/pipes";
 
 import { ExecutionTimeInterceptor } from "../interceptors/execution-time.interceptor";
