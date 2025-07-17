@@ -4,7 +4,6 @@ export * from './guards/auth.guard';
 export * from './guards/role.guard';
 export * from './controllers/auth.controller';
 export * from './filters/auth-exception.filter';
-export * from './interceptors/auth-logging.interceptor';
 export * from './decorators/custom-error.decorator';
 export * from './constants';
 export * from './decorators/roles.decorator';
