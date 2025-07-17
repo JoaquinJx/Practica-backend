@@ -2,7 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { AuthService } from './services/auth.service';
 import { AuthController } from './controllers/auth.controller';
-import { AuthGuard } from './guards/auth.guard';
+
 import { RoleGuard } from './guards/role.guard';
 import { AuthExceptionFilter } from './filters/auth-exception.filter';
 
@@ -20,7 +20,7 @@ import { UserModule } from 'src/users/users.module';
   ],
   providers: [
     AuthService, 
-    AuthGuard, 
+     
     RoleGuard,
     AuthExceptionFilter,
     
@@ -28,7 +28,7 @@ import { UserModule } from 'src/users/users.module';
   controllers: [AuthController],
   exports: [
     AuthService, 
-    AuthGuard, 
+     
     RoleGuard,
     AuthExceptionFilter,
     
