@@ -1,6 +1,5 @@
 export * from './auth.module';
 export * from './services/auth.service';
-export * from './guards/auth.guard';
 export * from './guards/role.guard';
 export * from './controllers/auth.controller';
 export * from './filters/auth-exception.filter';
@@ -9,3 +8,4 @@ export * from './constants';
 export * from './decorators/roles.decorator';
 export * from './decorators/public.decorator';
 export * from './enums/role.enum';
+export * from './guards/auth.guard';

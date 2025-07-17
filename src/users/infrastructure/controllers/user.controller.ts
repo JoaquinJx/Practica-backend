@@ -14,6 +14,7 @@ import { Body,
     ParseIntPipe, 
     Patch,
     UseInterceptors,
+    UseGuards,
      } from "@nestjs/common";
 
 import { CreateUserDto } from "src/users/application/dto/create.user.dto";
@@ -27,6 +28,10 @@ import { Roles } from "src/auth/decorators/roles.decorator";
 import { Public } from "src/auth/decorators/public.decorator";
 
 import { Role } from "src/auth/enums/role.enum";
+
+import { AuthGuard } from "src/auth/guards/auth.guard";
+
+import { RoleGuard } from "src/auth/guards/role.guard";
 
 import { 
     EmailNormalizationPipe,
@@ -57,12 +62,14 @@ export class UserController {
     }
 
     // 🔍 OBTENER PERFIL - Usuario autenticado
+    @UseGuards(AuthGuard)
     @Get('profile')
     getProfile(@Request() req: any) {
         return this.userService.findByEmail(req.user.username);
     }
 
     // 📋 LISTAR USUARIOS CON FILTROS - Solo Admin
+    @UseGuards(RoleGuard)
     @Roles(Role.ADMIN)
     @Get()
     async findUsers(
@@ -79,6 +86,7 @@ export class UserController {
     }
 
     // 👤 OBTENER USUARIO POR ID - Admin y Moderador
+    @UseGuards(RoleGuard)
     @Roles(Role.ADMIN, Role.MODERATOR)
     @Get(':id')
     findUser(@Param('id', ParseUUIDPipe) id: string) {
@@ -86,6 +94,7 @@ export class UserController {
     }
 
     // 👑 ENDPOINT SOLO ADMIN
+    @UseGuards(RoleGuard)
     @Roles(Role.ADMIN)
     @Get('admin-only')
     getAdminData(@Request() req: any) {
@@ -96,6 +105,7 @@ export class UserController {
     }
 
     // 👑🛡️ ENDPOINT ADMIN/MODERADOR
+    @UseGuards(RoleGuard)
     @Roles(Role.ADMIN, Role.MODERATOR)
     @Get('moderator-admin')
     getModeratorOrAdminData(@Request() req: any) {
@@ -106,6 +116,7 @@ export class UserController {
     }
 
     // ✏️ ACTUALIZAR PERFIL PROPIO - Con validación de datos
+    @UseGuards(AuthGuard)
     @Put('profile')
     @UsePipes(new ValidationPipe({ 
         transform: true, 
@@ -118,6 +129,7 @@ export class UserController {
     }
 
     // 🗑️ ELIMINAR USUARIO - Solo Admin con validación UUID
+    @UseGuards(RoleGuard)
     @Roles(Role.ADMIN)
     @Delete(':id')
     deleteUser(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
@@ -125,6 +137,7 @@ export class UserController {
     }
 
     // ✏️ ACTUALIZAR USUARIO ESPECÍFICO - Solo Admin con pipes personalizados
+    @UseGuards(RoleGuard)
     @Roles(Role.ADMIN)
     @Put(':id')
     @UsePipes(new ValidationPipe({ 
@@ -142,6 +155,7 @@ export class UserController {
     }
 
     // 🔍 BUSCAR USUARIOS POR EMAIL - Admin/Moderador con pipe de email
+    @UseGuards(RoleGuard)
     @Roles(Role.ADMIN, Role.MODERATOR)
     @Get('search/email/:email')
     findByEmail(@Param('email', EmailNormalizationPipe) email: string) {
@@ -149,6 +163,7 @@ export class UserController {
     }
 
     // 👑 CAMBIAR ROL DE USUARIO - Solo Admin con validación de rol
+    @UseGuards(RoleGuard)
     @Roles(Role.ADMIN)
     @Patch(':id/role')
     changeUserRole(

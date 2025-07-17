@@ -1,11 +1,11 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { JwtService } from '@nestjs/jwt';
-import { Role } from '../enums/role.enum';
-import { ROLES_KEY } from '../decorators/roles.decorator';
-import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
-import { jwtConstants } from '../constants';
+import { JwtService } from "@nestjs/jwt";
 import { UserService } from 'src/users/application/services/user.service';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { ROLES_KEY } from '../decorators/roles.decorator';
+import { jwtConstants } from "../constants";
+import { Role } from '../enums/role.enum';
 
 @Injectable()
 export class RoleGuard implements CanActivate {
@@ -16,23 +16,24 @@ export class RoleGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    // Verificar si el endpoint está marcado como público
+    // VERIFICAR SI ES PUBLICO
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
-      context.getClass(),
+      context.getClass()
     ]);
-    
+
     if (isPublic) {
       return true; // Permitir acceso si es público
     }
 
+    // VERIFICAR ROLES
     const requiredRoles = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, [
       context.getHandler(),
-      context.getClass(),
+      context.getClass()
     ]);
 
     if (!requiredRoles) {
-      return true; // Si no se especifican roles, permite el acceso
+      return true; // Si no hay roles específicos, permite el acceso
     }
 
     const request = context.switchToHttp().getRequest();
@@ -46,11 +47,9 @@ export class RoleGuard implements CanActivate {
       const payload = await this.jwtService.verifyAsync(token, {
         secret: jwtConstants.secret,
       });
-
-      // Obtener el usuario actualizado desde la base de datos
-      // para asegurar que el rol sea el más reciente
-      const user = await this.userService.findByEmail(payload.username);
       
+      const user = await this.userService.findByEmail(payload.username);
+
       if (!user) {
         throw new UnauthorizedException('User not found');
       }
@@ -66,7 +65,7 @@ export class RoleGuard implements CanActivate {
         );
       }
 
-      // Añadir información del usuario al request para uso posterior
+      // Agregar el usuario al request
       request['user'] = { ...payload, role: userRole };
       
       return true;
@@ -76,8 +75,7 @@ export class RoleGuard implements CanActivate {
         throw error;
       }
       
-      // Para otros errores, lanzamos una excepción genérica
-      throw new UnauthorizedException('Role verification failed');
+      throw new UnauthorizedException('Invalid token for role verification');
     }
   }
 
