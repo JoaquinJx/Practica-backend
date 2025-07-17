@@ -2,8 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { AuthGuard } from './auth/guards/auth.guard';
-
+import { TransformResponseInterceptor } from './users/infrastructure/interceptors/transform-response.interceptor';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   
@@ -16,6 +15,10 @@ async function bootstrap() {
     }),
   );
 
+  //INTERCEPTOR DE RESPUESTA
+ app.useGlobalInterceptors(new TransformResponseInterceptor());
+
+
   // GUARD GLOBAL - Todos los endpoints requieren autenticación
   // NOTA: Solo descomenta esto si quieres que TODOS los endpoints requieran autenticación
   // app.useGlobalGuards(new AuthGuard());
@@ -27,6 +30,7 @@ async function bootstrap() {
     .setVersion('1.0')
     .addBearerAuth()
     .build();
+    
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
   await app.listen(process.env.PORT ?? 3001);

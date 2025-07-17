@@ -13,7 +13,8 @@ import { Body,
     DefaultValuePipe, 
     ParseIntPipe, 
     Patch,
-    UseInterceptors } from "@nestjs/common";
+    UseInterceptors,
+     } from "@nestjs/common";
 
 import { CreateUserDto } from "src/users/application/dto/create.user.dto";
 
@@ -35,10 +36,11 @@ import {
 } from "../../application/pipes";
 
 import { ExecutionTimeInterceptor } from "../interceptors/execution-time.interceptor";
-import { TransformResponseInterceptor } from "../interceptors/transform-response.interceptor";
+
 
 @Controller('users')
-@UseInterceptors(ExecutionTimeInterceptor, TransformResponseInterceptor)
+@UseInterceptors(ExecutionTimeInterceptor) // Interceptor para medir tiempo de ejecución
+
 export class UserController {
     constructor(private readonly userService: UserService) {}
     

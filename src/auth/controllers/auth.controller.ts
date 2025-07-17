@@ -3,9 +3,10 @@ import { AuthService } from '../services/auth.service';
 import { LoginDto } from 'src/users/application/dto/login.dto';
 import { Public } from '../decorators/public.decorator';
 import { LoggerInterceptor } from 'src/users/infrastructure/interceptors/logger.interceptor';
+import { ExecutionTimeInterceptor } from 'src/users/infrastructure/interceptors/execution-time.interceptor';
 
 @Controller('auth')
-@UseInterceptors(LoggerInterceptor)
+@UseInterceptors(LoggerInterceptor,ExecutionTimeInterceptor)
 export class AuthController {
   constructor(private authService: AuthService) {}
 
