@@ -8,6 +8,7 @@ import { AuthExceptionFilter } from './filters/auth-exception.filter';
 
 import { jwtConstants } from './constants';
 import { UserModule } from 'src/users/users.module';
+import { AuthGuard } from './guards/auth.guard';
 
 @Module({
   imports: [
@@ -20,7 +21,7 @@ import { UserModule } from 'src/users/users.module';
   ],
   providers: [
     AuthService, 
-     
+     AuthGuard,
     RoleGuard,
     AuthExceptionFilter,
     
@@ -28,7 +29,7 @@ import { UserModule } from 'src/users/users.module';
   controllers: [AuthController],
   exports: [
     AuthService, 
-     
+     AuthGuard,
     RoleGuard,
     AuthExceptionFilter,
     
