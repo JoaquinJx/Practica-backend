@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { AuthExceptionFilter } from './auth/filters/auth-exception.filter';
 import { TransformResponseInterceptor } from './users/infrastructure/interceptors/transform-response.interceptor';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -17,6 +18,9 @@ async function bootstrap() {
 
   //INTERCEPTOR DE RESPUESTA
  app.useGlobalInterceptors(new TransformResponseInterceptor());
+
+ // FILTRO EXCEPCIONES GLOBAL
+app.useGlobalFilters(new AuthExceptionFilter())
 
 
   // GUARD GLOBAL - Todos los endpoints requieren autenticación
