@@ -118,4 +118,16 @@ describe('RoleGuard', () => {
     await expect(guard.canActivate(mockContext)).rejects.toThrow(ForbiddenException);
 });
 
+it('should allow access when user has one of multiple required roles', async () => {
+    (mockReflector.getAllAndOverride as jest.Mock).mockReturnValue([Role.ADMIN, Role.USER ]);
+    (mockJwtService.verifyAsync as jest.Mock).mockResolvedValue({ email: 'user@test.com' });
+    (mockUserService.findByEmail as jest.Mock).mockResolvedValue({ 
+        email: 'user@test.com', 
+        role: Role.USER 
+    });
+    
+    const result = await guard.canActivate(mockContext);
+    expect(result).toBe(true);
+});
+
 })
