@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { APP_GUARD, APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './shared/services/prisma.module';
 import { UserModule } from './users/users.module';
@@ -6,7 +6,8 @@ import { AuthModule } from './auth/auth.module';
 import { AuthGuard } from './auth/guards/auth.guard';
 import { RoleGuard } from './auth/guards/role.guard';
 import { AuthExceptionFilter } from './auth/filters/auth-exception.filter';
-import { AuthLoggingInterceptor } from './auth/interceptors/auth-logging.interceptor';
+
+import { LogginMiddleware } from './shared/middlewares/loggin.middleware';
 
 @Module({
   imports: [PrismaModule, UserModule, AuthModule],
@@ -28,10 +29,16 @@ import { AuthLoggingInterceptor } from './auth/interceptors/auth-logging.interce
       useClass: AuthExceptionFilter,
     },
     // Interceptor global para logging de autenticación
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: AuthLoggingInterceptor,
-    },
+    // {
+    //   provide: APP_INTERCEPTOR,
+    //   useClass: AuthLoggingInterceptor,
+    // },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(LogginMiddleware)
+      .forRoutes('*'); // Aplica a todas las rutas
+  }
+}
